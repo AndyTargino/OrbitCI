@@ -201,6 +201,7 @@ jobs:
 
   build-windows:
     needs: release
+    runs-on: windows-latest
     steps:
       - name: Checkout release tag
         run: |
@@ -221,6 +222,7 @@ jobs:
 
   build-linux:
     needs: release
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout release tag
         run: |
@@ -246,6 +248,7 @@ jobs:
 
   build-macos:
     needs: release
+    runs-on: macos-latest
     steps:
       - name: Checkout release tag
         run: |

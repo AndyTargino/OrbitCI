@@ -23,7 +23,7 @@ interface ActiveNotification {
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-const WIDTH    = 360
+const WIDTH    = 364
 const BASE_H   = 88    // estimated before resize
 const MARGIN   = 12
 const GAP      = 8
@@ -33,7 +33,11 @@ const DEFAULT_DURATION = 5000
 const active: ActiveNotification[] = []
 let handlersRegistered = false
 
-// ─── HTML template ────────────────────────────────────────────────────────────
+// ─── Platform detection ───────────────────────────────────────────────────────
+type Platform = 'win32' | 'darwin' | 'linux'
+const PLATFORM: Platform = process.platform as Platform
+
+// ─── HTML template (platform-adaptive) ────────────────────────────────────────
 function buildHtml(): string {
   return `<!DOCTYPE html>
 <html>
@@ -44,112 +48,229 @@ function buildHtml(): string {
 *{margin:0;padding:0;box-sizing:border-box}
 html,body{background:transparent;overflow:hidden;width:100%;height:100%;-webkit-user-select:none;user-select:none}
 
-.wrap{
-  padding:8px;
-  width:100%;
-}
-
+/* ── Windows 11 style ────────────────────────────────────────── */
+${PLATFORM === 'win32' ? `
+.wrap{padding:4px;width:100%}
 .card{
   width:100%;
-  background:rgba(14,14,16,0.97);
-  backdrop-filter:blur(24px) saturate(160%);
+  background:rgba(32,32,32,0.96);
   border:1px solid rgba(255,255,255,0.08);
-  border-radius:10px;
-  box-shadow:0 8px 32px rgba(0,0,0,0.55),0 0 0 1px rgba(255,255,255,0.03);
+  border-radius:8px;
+  box-shadow:0 4px 20px rgba(0,0,0,0.42),0 0 0 1px rgba(255,255,255,0.04);
   overflow:hidden;
   cursor:pointer;
   position:relative;
-  transform:translateX(calc(100% + 20px));
+  transform:translateY(100%);
   opacity:0;
-  transition:transform 0.32s cubic-bezier(0.16,1,0.3,1),opacity 0.32s ease;
+  transition:transform 0.3s cubic-bezier(0.1,0.9,0.2,1),opacity 0.2s ease;
 }
-.card.show{transform:translateX(0);opacity:1}
+.card.show{transform:translateY(0);opacity:1}
 .card.dismiss{
-  transform:translateX(calc(100% + 20px));
-  opacity:0;
-  transition:transform 0.24s cubic-bezier(0.4,0,1,1),opacity 0.24s ease;
+  transform:translateX(calc(100% + 20px));opacity:0;
+  transition:transform 0.2s cubic-bezier(0.3,0,0.8,0.15),opacity 0.18s ease;
 }
+.accent{position:absolute;left:0;top:0;bottom:0;width:3px}
+.body{display:flex;align-items:flex-start;gap:12px;padding:14px 16px 14px 16px}
+.icon-wrap{flex-shrink:0;width:18px;height:18px;margin-top:1px}
+.icon-wrap svg{width:100%;height:100%}
+.content{flex:1;min-width:0}
+.meta{display:flex;align-items:center;justify-content:space-between;margin-bottom:2px}
+.app-name{
+  font-family:'Segoe UI Variable Text','Segoe UI',sans-serif;
+  font-size:11px;font-weight:400;color:rgba(255,255,255,0.45);
+}
+.time-label{
+  font-family:'Segoe UI Variable Text','Segoe UI',sans-serif;
+  font-size:11px;color:rgba(255,255,255,0.3);
+}
+.title{
+  font-family:'Segoe UI Variable Text','Segoe UI',sans-serif;
+  font-size:13px;font-weight:600;color:rgba(255,255,255,0.95);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.35;
+}
+.message{
+  font-family:'Segoe UI Variable Text','Segoe UI',sans-serif;
+  font-size:12px;color:rgba(255,255,255,0.6);
+  line-height:1.4;margin-top:2px;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;
+}
+.actions{display:flex;gap:6px;padding:0 16px 12px 16px}
+.btn{
+  flex:1;
+  font-family:'Segoe UI Variable Text','Segoe UI',sans-serif;
+  font-size:12px;font-weight:400;
+  padding:5px 12px;border-radius:4px;
+  border:1px solid rgba(255,255,255,0.08);
+  background:rgba(255,255,255,0.06);
+  color:rgba(255,255,255,0.9);cursor:pointer;
+  transition:background .12s;
+}
+.btn:hover{background:rgba(255,255,255,0.1)}
+.btn.primary{background:rgba(96,165,250,0.2);border-color:rgba(96,165,250,0.3);color:#93c5fd}
+.btn.primary:hover{background:rgba(96,165,250,0.3)}
+.timeout-bar{position:absolute;bottom:0;left:0;right:0;height:2px;background:rgba(255,255,255,0.04)}
+.timeout-fill{height:100%;transform-origin:left}
+.close-btn{
+  position:absolute;top:8px;right:8px;width:22px;height:22px;
+  border:none;background:transparent;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;
+  color:rgba(255,255,255,0.3);border-radius:4px;
+  transition:background .12s,color .12s;font-size:14px;line-height:1;
+  font-family:'Segoe UI',sans-serif;
+}
+.close-btn:hover{background:rgba(255,255,255,0.08);color:rgba(255,255,255,0.7)}
+` : ''}
 
-.accent{
-  position:absolute;left:0;top:0;bottom:0;width:3px;
-  border-radius:10px 0 0 10px;
+/* ── macOS style ─────────────────────────────────────────────── */
+${PLATFORM === 'darwin' ? `
+.wrap{padding:6px;width:100%}
+.card{
+  width:100%;
+  background:rgba(30,30,30,0.85);
+  backdrop-filter:blur(40px) saturate(180%);
+  -webkit-backdrop-filter:blur(40px) saturate(180%);
+  border:0.5px solid rgba(255,255,255,0.12);
+  border-radius:14px;
+  box-shadow:0 8px 40px rgba(0,0,0,0.45),0 0 1px rgba(255,255,255,0.1);
+  overflow:hidden;
+  cursor:pointer;
+  position:relative;
+  transform:translateY(-10px) scale(0.96);
+  opacity:0;
+  transition:transform 0.35s cubic-bezier(0.2,1,0.3,1),opacity 0.25s ease;
 }
+.card.show{transform:translateY(0) scale(1);opacity:1}
+.card.dismiss{
+  transform:translateX(calc(100% + 20px));opacity:0;
+  transition:transform 0.22s cubic-bezier(0.4,0,1,1),opacity 0.18s ease;
+}
+.accent{position:absolute;left:0;top:0;bottom:0;width:3px;border-radius:14px 0 0 14px}
+.body{display:flex;align-items:flex-start;gap:10px;padding:12px 14px}
+.icon-wrap{flex-shrink:0;width:20px;height:20px;margin-top:1px}
+.icon-wrap svg{width:100%;height:100%}
+.content{flex:1;min-width:0}
+.meta{display:flex;align-items:center;justify-content:space-between;margin-bottom:2px}
+.app-name{
+  font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','Helvetica Neue',sans-serif;
+  font-size:11px;font-weight:500;letter-spacing:0;
+  color:rgba(255,255,255,0.4);
+}
+.time-label{
+  font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text',sans-serif;
+  font-size:11px;color:rgba(255,255,255,0.25);
+}
+.title{
+  font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','Helvetica Neue',sans-serif;
+  font-size:13px;font-weight:600;
+  color:rgba(255,255,255,0.92);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.3;
+}
+.message{
+  font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','Helvetica Neue',sans-serif;
+  font-size:12px;color:rgba(255,255,255,0.55);
+  line-height:1.4;margin-top:2px;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;
+}
+.actions{display:flex;gap:6px;padding:0 14px 10px 14px}
+.btn{
+  flex:1;
+  font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text',sans-serif;
+  font-size:12px;font-weight:500;
+  padding:5px 10px;border-radius:8px;
+  border:none;
+  background:rgba(255,255,255,0.1);
+  color:rgba(255,255,255,0.85);cursor:pointer;
+  transition:background .14s;
+}
+.btn:hover{background:rgba(255,255,255,0.16)}
+.btn.primary{background:rgba(96,165,250,0.25);color:#93c5fd}
+.btn.primary:hover{background:rgba(96,165,250,0.35)}
+.timeout-bar{position:absolute;bottom:0;left:0;right:0;height:2px;background:rgba(255,255,255,0.04);border-radius:0 0 14px 14px}
+.timeout-fill{height:100%;transform-origin:left;border-radius:0 0 0 14px}
+.close-btn{display:none}
+` : ''}
+
+/* ── Linux / GTK style ───────────────────────────────────────── */
+${PLATFORM === 'linux' ? `
+.wrap{padding:4px;width:100%}
+.card{
+  width:100%;
+  background:rgba(36,36,36,0.98);
+  border:1px solid rgba(255,255,255,0.06);
+  border-radius:12px;
+  box-shadow:0 6px 24px rgba(0,0,0,0.5),0 0 0 1px rgba(0,0,0,0.2);
+  overflow:hidden;
+  cursor:pointer;
+  position:relative;
+  transform:translateY(20px);
+  opacity:0;
+  transition:transform 0.25s cubic-bezier(0.2,0.8,0.4,1),opacity 0.2s ease;
+}
+.card.show{transform:translateY(0);opacity:1}
+.card.dismiss{
+  transform:translateX(calc(100% + 20px));opacity:0;
+  transition:transform 0.2s cubic-bezier(0.4,0,1,1),opacity 0.18s ease;
+}
+.accent{position:absolute;left:0;top:0;bottom:0;width:3px}
+.body{display:flex;align-items:flex-start;gap:12px;padding:14px 16px}
+.icon-wrap{flex-shrink:0;width:18px;height:18px;margin-top:1px}
+.icon-wrap svg{width:100%;height:100%}
+.content{flex:1;min-width:0}
+.meta{display:flex;align-items:center;justify-content:space-between;margin-bottom:3px}
+.app-name{
+  font-family:'Cantarell','Ubuntu','Noto Sans','Liberation Sans',sans-serif;
+  font-size:11px;font-weight:700;letter-spacing:0.02em;
+  color:rgba(255,255,255,0.45);
+}
+.time-label{
+  font-family:'Cantarell','Ubuntu','Noto Sans',sans-serif;
+  font-size:11px;color:rgba(255,255,255,0.3);
+}
+.title{
+  font-family:'Cantarell','Ubuntu','Noto Sans','Liberation Sans',sans-serif;
+  font-size:13px;font-weight:700;
+  color:rgba(255,255,255,0.92);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.35;
+}
+.message{
+  font-family:'Cantarell','Ubuntu','Noto Sans','Liberation Sans',sans-serif;
+  font-size:12px;color:rgba(255,255,255,0.6);
+  line-height:1.4;margin-top:2px;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;
+}
+.actions{display:flex;gap:8px;padding:0 16px 12px 16px}
+.btn{
+  flex:1;
+  font-family:'Cantarell','Ubuntu','Noto Sans',sans-serif;
+  font-size:12px;font-weight:500;
+  padding:6px 12px;border-radius:6px;
+  border:none;
+  background:rgba(255,255,255,0.08);
+  color:rgba(255,255,255,0.88);cursor:pointer;
+  transition:background .12s;
+}
+.btn:hover{background:rgba(255,255,255,0.14)}
+.btn.primary{background:rgba(98,160,234,0.25);color:#7dc4e4}
+.btn.primary:hover{background:rgba(98,160,234,0.35)}
+.timeout-bar{position:absolute;bottom:0;left:0;right:0;height:2px;background:rgba(255,255,255,0.04)}
+.timeout-fill{height:100%;transform-origin:left}
+.close-btn{
+  position:absolute;top:8px;right:8px;width:24px;height:24px;
+  border:none;background:transparent;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;
+  color:rgba(255,255,255,0.3);border-radius:50%;
+  transition:background .12s,color .12s;font-size:15px;line-height:1;
+  font-family:'Cantarell','Ubuntu',sans-serif;
+}
+.close-btn:hover{background:rgba(255,255,255,0.1);color:rgba(255,255,255,0.7)}
+` : ''}
+
+/* ── Common accent/fill colors ───────────────────────────────── */
 .accent-success{background:#3fb950}
 .accent-failure{background:#f85149}
 .accent-running{background:#58a6ff}
 .accent-warning{background:#d29922}
 .accent-info{background:rgba(180,180,190,0.4)}
-
-.body{
-  display:flex;align-items:flex-start;
-  gap:10px;padding:12px 12px 12px 15px;
-}
-
-.icon-wrap{
-  flex-shrink:0;width:20px;height:20px;margin-top:1px;
-}
-.icon-wrap svg{width:100%;height:100%}
-
-.content{flex:1;min-width:0}
-
-.meta{
-  display:flex;align-items:center;justify-content:space-between;
-  margin-bottom:3px;
-}
-.app-name{
-  font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
-  font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;
-  color:rgba(200,200,210,.45);
-}
-.time-label{
-  font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
-  font-size:10px;color:rgba(200,200,210,.3);
-}
-
-.title{
-  font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
-  font-size:13px;font-weight:600;
-  color:#e8e8ee;
-  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
-  line-height:1.3;
-}
-
-.message{
-  font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
-  font-size:12px;
-  color:rgba(200,200,210,.65);
-  line-height:1.4;margin-top:2px;
-  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;
-}
-
-.actions{
-  display:flex;gap:6px;
-  padding:0 12px 11px 15px;
-}
-.btn{
-  flex:1;
-  font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
-  font-size:12px;font-weight:500;
-  padding:5px 10px;border-radius:6px;
-  border:1px solid rgba(255,255,255,.10);
-  background:rgba(255,255,255,.05);
-  color:#e0e0e8;cursor:pointer;
-  transition:background .14s,border-color .14s;
-}
-.btn:hover{background:rgba(255,255,255,.10);border-color:rgba(255,255,255,.18)}
-.btn.primary{
-  background:rgba(255,255,255,.13);
-  border-color:rgba(255,255,255,.22);
-}
-.btn.primary:hover{background:rgba(255,255,255,.2)}
-
-.timeout-bar{
-  position:absolute;bottom:0;left:0;right:0;height:2px;
-  background:rgba(255,255,255,.05);
-}
-.timeout-fill{
-  height:100%;transform-origin:left;
-}
 .fill-success{background:#3fb950}
 .fill-failure{background:#f85149}
 .fill-running{background:#58a6ff}
@@ -172,19 +293,21 @@ html,body{background:transparent;overflow:hidden;width:100%;height:100%;-webkit-
         <div class="message" id="msg"></div>
       </div>
     </div>
+    <button class="close-btn" id="closeBtn" title="Fechar">&times;</button>
     <div class="actions" id="actions" style="display:none"></div>
     <div class="timeout-bar"><div class="timeout-fill" id="fill"></div></div>
   </div>
 </div>
 
 <script>
-const card   = document.getElementById('card')
-const accent = document.getElementById('accent')
-const iconEl = document.getElementById('icon')
-const titleEl= document.getElementById('title')
-const msgEl  = document.getElementById('msg')
-const actEl  = document.getElementById('actions')
-const fill   = document.getElementById('fill')
+const card     = document.getElementById('card')
+const accent   = document.getElementById('accent')
+const iconEl   = document.getElementById('icon')
+const titleEl  = document.getElementById('title')
+const msgEl    = document.getElementById('msg')
+const actEl    = document.getElementById('actions')
+const fill     = document.getElementById('fill')
+const closeBtn = document.getElementById('closeBtn')
 
 let currentId   = null
 let remaining   = 0
@@ -265,6 +388,12 @@ function dismiss() {
   setTimeout(() => window.notificationBridge.close(currentId), 280)
 }
 
+// Close button
+closeBtn.addEventListener('click', (e) => {
+  e.stopPropagation()
+  dismiss()
+})
+
 // Hover: pause/resume timeout
 card.addEventListener('mouseenter', () => {
   if (remaining > 0 && !paused) {
@@ -310,6 +439,15 @@ function getWorkArea() {
 
 function calcY(index: number, heights: number[]): number {
   const wa = getWorkArea()
+  // macOS: notifications come from top-right; Windows/Linux: bottom-right
+  if (PLATFORM === 'darwin') {
+    let offset = MARGIN
+    for (let i = 0; i < index; i++) {
+      offset += heights[i] + GAP
+    }
+    return wa.y + offset
+  }
+  // Windows / Linux: stack from bottom
   let offset = MARGIN
   for (let i = 0; i < index; i++) {
     offset += heights[i] + GAP
@@ -333,7 +471,9 @@ function reposition(): void {
 function createWindow(id: string): BrowserWindow {
   const wa = getWorkArea()
   const x  = wa.x + wa.width - WIDTH - MARGIN
-  const y  = wa.y + wa.height - BASE_H - MARGIN
+  const y  = PLATFORM === 'darwin'
+    ? wa.y + MARGIN
+    : wa.y + wa.height - BASE_H - MARGIN
 
   const preloadPath = join(__dirname, '../preload/notification.js')
 

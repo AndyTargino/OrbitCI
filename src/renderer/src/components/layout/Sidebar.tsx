@@ -1,10 +1,10 @@
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useEffect, useRef, useState } from 'react'
 import {
-  History, Shield, Plus, BarChart2,
-  CheckCircle2, XCircle, Loader2, AlertCircle, LayoutDashboard, RefreshCw,
-  LogOut, ChevronDown, UserCircle2, Settings, ArrowUp, ArrowDown, GitBranch,
-  Download, RotateCcw, Container
+  History, Settings, Plus, Search, LayoutDashboard,
+  Loader2, XCircle, UserCircle2,
+  ChevronDown, LogOut, ArrowUp, ArrowDown, GitBranch,
+  Download, RotateCcw, RefreshCw, Container
 } from 'lucide-react'
 import orbitIcon from '@/assets/icon.png'
 import { cn } from '@/lib/utils'
@@ -19,37 +19,8 @@ import {
 import { electron } from '@/lib/electron'
 import { IPC_CHANNELS } from '@shared/constants'
 import type { RunStatus } from '@shared/types'
-
-function OwnerAvatar({ owner, className }: { owner: string; className?: string }): JSX.Element {
-  const [failed, setFailed] = useState(false)
-  if (failed) {
-    return (
-      <span className={cn('rounded-full bg-primary/15 border border-primary/20 flex items-center justify-center text-[9px] font-bold text-primary shrink-0', className)}>
-        {owner[0]?.toUpperCase()}
-      </span>
-    )
-  }
-  return (
-    <img
-      src={`https://github.com/${owner}.png?size=32`}
-      alt={owner}
-      className={cn('rounded-full object-cover shrink-0', className)}
-      onError={() => setFailed(true)}
-    />
-  )
-}
-
-function RepoStatusDot({ status }: { status: RunStatus | null }): JSX.Element {
-  if (status === 'running')
-    return <Loader2 className="h-3 w-3 animate-spin text-[#58a6ff] shrink-0" />
-  if (status === 'success')
-    return <CheckCircle2 className="h-3 w-3 text-[#3fb950] shrink-0" />
-  if (status === 'failure')
-    return <XCircle className="h-3 w-3 text-[#f85149] shrink-0" />
-  if (status === 'cancelled')
-    return <AlertCircle className="h-3 w-3 text-[#d29922] shrink-0" />
-  return <span className="h-2 w-2 rounded-full bg-sidebar-border shrink-0 mt-px" />
-}
+import { OwnerAvatar } from '@/components/shared/OwnerAvatar'
+import { StatusIcon } from '@/components/shared/StatusIcon'
 
 export function Sidebar(): JSX.Element {
   const navigate = useNavigate()
@@ -66,6 +37,8 @@ export function Sidebar(): JSX.Element {
   const clearDockerInstallLogs = useDockerStore((s) => s.clearInstallLogs)
   const dockerInstallLogs = useDockerStore((s) => s.installLogs)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  const [search, setSearch] = useState('')
 
   // Subscribe to updater events from main process
   useEffect(() => {
@@ -139,7 +112,7 @@ export function Sidebar(): JSX.Element {
 
   const handleSelectRepo = (repoId: string) => {
     selectRepo(repoId)
-    navigate(`/dashboard/${encodeURIComponent(repoId)}`)
+    navigate(`/repo/${encodeURIComponent(repoId)}`)
   }
 
   const handleSync = async (e: React.MouseEvent, repoId: string) => {
@@ -154,7 +127,6 @@ export function Sidebar(): JSX.Element {
   }
 
   const handleSidebarDockerInstall = async () => {
-    // Navigate to settings so user can see the terminal
     navigate('/settings')
 
     if (dockerInstalling) return
@@ -185,17 +157,19 @@ export function Sidebar(): JSX.Element {
     }
   }
 
-  const navItems = [
-    { icon: LayoutDashboard, label: 'Repositórios', path: '/repos' },
-    { icon: History, label: 'Histórico', path: '/history' },
-    { icon: BarChart2, label: 'Estatísticas', path: '/analytics' },
-    { icon: Shield, label: 'Secrets', path: '/secrets' }
-  ]
+  const filteredRepos = repos.filter((r) =>
+    r.name.toLowerCase().includes(search.toLowerCase())
+  )
+
+  const isDashboardActive = location.pathname === '/'
+  const isActivityActive = location.pathname === '/history'
+  const isSettingsActive = location.pathname === '/settings'
 
   return (
     <nav className="flex h-full w-[220px] shrink-0 flex-col border-r border-sidebar-border bg-sidebar-background">
+
       {/* ── Brand ─────────────────────────────────────────────────────────── */}
-      <div className="flex h-12 items-center gap-2.5 px-4 titlebar-drag border-b border-sidebar-border select-none">
+      <div className="flex h-12 items-center gap-2.5 px-4 titlebar-drag border-b border-sidebar-border select-none shrink-0">
         <img
           src={orbitIcon}
           alt="OrbitCI"
@@ -207,42 +181,33 @@ export function Sidebar(): JSX.Element {
         </span>
       </div>
 
-      {/* ── Main navigation ───────────────────────────────────────────────── */}
-      <div className="px-2 pt-3 space-y-0.5">
-        {navItems.map((item) => {
-          const active =
-            location.pathname === item.path ||
-            (item.path !== '/repos' && location.pathname.startsWith(item.path))
-          return (
-            <button
-              key={item.path}
-              onClick={() => navigate(item.path)}
-              className={cn(
-                'no-drag flex w-full items-center gap-2.5 rounded-[5px] px-2.5 py-[7px] text-[13px] font-medium transition-colors',
-                active
-                  ? 'bg-sidebar-accent text-sidebar-accent-foreground'
-                  : 'text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground'
-              )}
-            >
-              <item.icon
-                className={cn('h-4 w-4 shrink-0', active ? 'text-primary' : 'opacity-60')}
-              />
-              {item.label}
-            </button>
-          )
-        })}
-      </div>
-
-      {/* ── Repos section header ──────────────────────────────────────────── */}
-      <div className="mt-4 mb-1 flex items-center justify-between px-3.5">
-        <span className="text-[11px] font-semibold uppercase tracking-widest text-sidebar-foreground/35">
-          Repos
-        </span>
+      {/* ── Search + Add ──────────────────────────────────────────────────── */}
+      <div className="flex items-center gap-1.5 px-2 pt-2.5 pb-1.5 shrink-0">
+        <div className="relative flex-1 min-w-0">
+          <Search className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-sidebar-foreground/35" />
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Filter repos..."
+            className={cn(
+              'no-drag w-full rounded-[5px] bg-sidebar-accent/40 pl-6 pr-2 py-[5px]',
+              'text-[12px] text-sidebar-foreground/80 placeholder:text-sidebar-foreground/30',
+              'border border-sidebar-border/60 focus:border-primary/40 focus:outline-none focus:ring-0',
+              'transition-colors'
+            )}
+          />
+        </div>
         <Tooltip>
           <TooltipTrigger asChild>
             <button
               onClick={() => navigate('/repos')}
-              className="no-drag flex h-5 w-5 items-center justify-center rounded text-sidebar-foreground/35 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground transition-colors"
+              className={cn(
+                'no-drag flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-[5px]',
+                'bg-sidebar-accent/40 border border-sidebar-border/60',
+                'text-sidebar-foreground/45 hover:text-sidebar-foreground hover:bg-sidebar-accent/70',
+                'transition-colors'
+              )}
             >
               <Plus className="h-3.5 w-3.5" />
             </button>
@@ -251,10 +216,17 @@ export function Sidebar(): JSX.Element {
         </Tooltip>
       </div>
 
-      {/* ── Repo list ─────────────────────────────────────────────────────── */}
-      <ScrollArea className="flex-1 px-2 pb-2">
+      {/* ── REPOS section label ───────────────────────────────────────────── */}
+      <div className="px-3.5 pt-1 pb-1 shrink-0">
+        <span className="text-[10px] font-semibold uppercase tracking-widest text-sidebar-foreground/30">
+          Repos
+        </span>
+      </div>
+
+      {/* ── Repo list (scrollable) ────────────────────────────────────────── */}
+      <ScrollArea className="flex-1 px-2 pb-1">
         <div className="space-y-0.5">
-          {repos.map((repo) => {
+          {filteredRepos.map((repo) => {
             const ciStatus = getRepoStatus(repo.id)
             const git: GitSummary | undefined = gitSummaries[repo.id]
             const isSelected = selectedRepoId === repo.id
@@ -265,27 +237,35 @@ export function Sidebar(): JSX.Element {
                 role="button"
                 tabIndex={0}
                 onClick={() => handleSelectRepo(repo.id)}
-                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleSelectRepo(repo.id) } }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    handleSelectRepo(repo.id)
+                  }
+                }}
                 className={cn(
-                  'no-drag group flex w-full items-start gap-2 rounded-[5px] px-2.5 py-2 text-left transition-colors cursor-pointer',
+                  'no-drag group flex w-full items-center gap-2 rounded-[5px] px-2 py-1.5 text-left transition-colors cursor-pointer',
                   isSelected
                     ? 'bg-sidebar-accent text-sidebar-accent-foreground'
                     : 'text-sidebar-foreground/65 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground'
                 )}
               >
-                {/* Owner avatar with CI status overlay */}
-                <div className="relative shrink-0 mt-0.5">
-                  <OwnerAvatar owner={repo.owner} className="h-6 w-6 ring-1 ring-sidebar-border" />
-                  <span className="absolute -bottom-0.5 -right-0.5 rounded-full ring-[1.5px] ring-sidebar-background">
-                    <RepoStatusDot status={ciStatus} />
-                  </span>
+                {/* Owner avatar */}
+                <div className="relative shrink-0">
+                  <OwnerAvatar
+                    owner={repo.owner}
+                    size={32}
+                    className="h-5 w-5 ring-1 ring-sidebar-border"
+                  />
                 </div>
 
-                {/* Repo info */}
+                {/* Repo name (primary) + branch (secondary) */}
                 <div className="min-w-0 flex-1 overflow-hidden">
-                  <div className="flex items-center gap-1.5">
-                    <span className="truncate text-[13px] font-medium leading-tight flex-1">{repo.name}</span>
-                    {/* ahead / behind */}
+                  <div className="flex items-center gap-1 min-w-0">
+                    <span className="truncate text-[12.5px] font-medium leading-snug flex-1">
+                      {repo.name}
+                    </span>
+                    {/* ahead / behind indicators */}
                     {git && (git.ahead > 0 || git.behind > 0) && (
                       <span className="flex items-center gap-0.5 shrink-0">
                         {git.ahead > 0 && (
@@ -300,34 +280,38 @@ export function Sidebar(): JSX.Element {
                         )}
                       </span>
                     )}
+                    {/* CI status */}
+                    <span className="shrink-0">
+                      <StatusIcon status={ciStatus} size="xs" />
+                    </span>
                   </div>
 
-                  {/* Branch + changes */}
-                  <div className="flex items-center gap-1.5 mt-0.5">
+                  {/* Branch row */}
+                  <div className="flex items-center gap-1 min-w-0">
                     {git ? (
                       <>
-                        <GitBranch className="h-2.5 w-2.5 shrink-0 text-sidebar-foreground/35" />
-                        <span className="truncate text-[10px] leading-tight text-sidebar-foreground/45">
+                        <GitBranch className="h-2.5 w-2.5 shrink-0 text-sidebar-foreground/30" />
+                        <span className="truncate text-[10px] leading-tight text-sidebar-foreground/40">
                           {git.branch}
                         </span>
                         {git.changes > 0 && (
-                          <span className="ml-auto shrink-0 text-[10px] text-[#d29922] font-medium">
+                          <span className="ml-auto shrink-0 text-[10px] text-[#d29922] font-medium leading-tight">
                             ●{git.changes}
                           </span>
                         )}
                       </>
                     ) : (
-                      <span className="truncate text-[10px] leading-tight text-sidebar-foreground/35">
+                      <span className="truncate text-[10px] leading-tight text-sidebar-foreground/30">
                         {repo.owner}
                       </span>
                     )}
                   </div>
                 </div>
 
-                {/* Sync button */}
+                {/* Sync button — visible on hover */}
                 <button
                   onClick={(e) => handleSync(e, repo.id)}
-                  className="no-drag mt-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                  className="no-drag shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
                   title="Sincronizar"
                 >
                   <RefreshCw className="h-3 w-3 text-sidebar-foreground/50 hover:text-sidebar-foreground" />
@@ -347,12 +331,65 @@ export function Sidebar(): JSX.Element {
               </button>
             </div>
           )}
+
+          {repos.length > 0 && filteredRepos.length === 0 && (
+            <div className="px-3 py-4 text-center">
+              <p className="text-[11px] text-sidebar-foreground/35">Sem resultados para "{search}"</p>
+            </div>
+          )}
         </div>
       </ScrollArea>
 
+      {/* ── GLOBAL section ────────────────────────────────────────────────── */}
+      <div className="shrink-0 border-t border-sidebar-border pt-1.5 pb-1 px-2">
+        <div className="px-1.5 pb-1">
+          <span className="text-[10px] font-semibold uppercase tracking-widest text-sidebar-foreground/30">
+            Global
+          </span>
+        </div>
+        <div className="space-y-0.5">
+          <button
+            onClick={() => navigate('/')}
+            className={cn(
+              'no-drag flex w-full items-center gap-2.5 rounded-[5px] px-2.5 py-[7px] text-[13px] font-medium transition-colors',
+              isDashboardActive
+                ? 'bg-sidebar-accent text-sidebar-accent-foreground'
+                : 'text-sidebar-foreground/65 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground'
+            )}
+          >
+            <LayoutDashboard className={cn('h-4 w-4 shrink-0', isDashboardActive ? 'text-primary' : 'opacity-60')} />
+            Dashboard
+          </button>
+          <button
+            onClick={() => navigate('/history')}
+            className={cn(
+              'no-drag flex w-full items-center gap-2.5 rounded-[5px] px-2.5 py-[7px] text-[13px] font-medium transition-colors',
+              isActivityActive
+                ? 'bg-sidebar-accent text-sidebar-accent-foreground'
+                : 'text-sidebar-foreground/65 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground'
+            )}
+          >
+            <History className={cn('h-4 w-4 shrink-0', isActivityActive ? 'text-primary' : 'opacity-60')} />
+            Activity
+          </button>
+          <button
+            onClick={() => navigate('/settings')}
+            className={cn(
+              'no-drag flex w-full items-center gap-2.5 rounded-[5px] px-2.5 py-[7px] text-[13px] font-medium transition-colors',
+              isSettingsActive
+                ? 'bg-sidebar-accent text-sidebar-accent-foreground'
+                : 'text-sidebar-foreground/65 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground'
+            )}
+          >
+            <Settings className={cn('h-4 w-4 shrink-0', isSettingsActive ? 'text-primary' : 'opacity-60')} />
+            Settings
+          </button>
+        </div>
+      </div>
+
       {/* ── Docker warning ────────────────────────────────────────────────── */}
       {dockerStatus && !dockerStatus.available && (
-        <div className="border-t border-sidebar-border px-3 py-2">
+        <div className="shrink-0 border-t border-sidebar-border px-3 py-2">
           {dockerInstalling ? (
             <button
               onClick={() => navigate('/settings')}
@@ -391,7 +428,7 @@ export function Sidebar(): JSX.Element {
 
       {/* ── Updater widget ────────────────────────────────────────────────── */}
       {updater.status !== 'idle' && updater.status !== 'not-available' && (
-        <div className="border-t border-sidebar-border px-3 py-2">
+        <div className="shrink-0 border-t border-sidebar-border px-3 py-2">
           {updater.status === 'checking' && (
             <div className="flex items-center gap-2 text-[11px] text-sidebar-foreground/50">
               <Loader2 className="h-3 w-3 animate-spin shrink-0" />
@@ -461,7 +498,7 @@ export function Sidebar(): JSX.Element {
       )}
 
       {/* ── User account ──────────────────────────────────────────────────── */}
-      <div className="border-t border-sidebar-border px-2 py-2">
+      <div className="shrink-0 border-t border-sidebar-border px-2 py-2">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button className="no-drag flex w-full items-center gap-2.5 rounded-[5px] px-2.5 py-2 text-left hover:bg-sidebar-accent/50 transition-colors group">
@@ -499,7 +536,7 @@ export function Sidebar(): JSX.Element {
                       onError={(e) => { e.currentTarget.style.display = 'none' }}
                     />
                   ) : (
-                    <OwnerAvatar owner={user.login} className="h-8 w-8" />
+                    <OwnerAvatar owner={user.login} size={32} className="h-8 w-8" />
                   )}
                   <div className="min-w-0">
                     <p className="font-medium text-[13px] truncate">{user.name ?? user.login}</p>

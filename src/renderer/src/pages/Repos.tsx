@@ -786,7 +786,7 @@ export function Repos(): JSX.Element {
                       repo={repo}
                       onClick={() => {
                         useRepoStore.getState().selectRepo(repo.id)
-                        navigate(`/dashboard/${encodeURIComponent(repo.id)}`)
+                        navigate(`/repo/${encodeURIComponent(repo.id)}`)
                       }}
                       onSync={() => handleSync(repo)}
                       onOpenFolder={() => handleOpenFolder(repo)}

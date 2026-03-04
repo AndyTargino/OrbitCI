@@ -235,6 +235,17 @@ export interface GitTag {
   date: string
 }
 
+export interface GitStash {
+  index: number
+  message: string
+}
+
+export interface GitRemote {
+  name: string
+  fetchUrl: string
+  pushUrl: string
+}
+
 // ─── Docker ───────────────────────────────────────────────────────────────────
 export interface DockerStatus {
   available: boolean

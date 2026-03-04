@@ -96,7 +96,33 @@ const api = {
     checkout: (repoId: string, ref: string) => ipcRenderer.invoke(IPC_CHANNELS.GIT_CHECKOUT, repoId, ref),
     tags: (repoId: string) => ipcRenderer.invoke(IPC_CHANNELS.GIT_TAGS, repoId),
     createTag: (repoId: string, name: string, message?: string) =>
-      ipcRenderer.invoke(IPC_CHANNELS.GIT_CREATE_TAG, repoId, name, message)
+      ipcRenderer.invoke(IPC_CHANNELS.GIT_CREATE_TAG, repoId, name, message),
+    merge: (repoId: string, branch: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.GIT_MERGE, repoId, branch),
+    mergeAbort: (repoId: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.GIT_MERGE_ABORT, repoId),
+    stash: (repoId: string, message?: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.GIT_STASH, repoId, message),
+    stashPop: (repoId: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.GIT_STASH_POP, repoId),
+    stashList: (repoId: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.GIT_STASH_LIST, repoId),
+    deleteBranch: (repoId: string, name: string, force?: boolean) =>
+      ipcRenderer.invoke(IPC_CHANNELS.GIT_DELETE_BRANCH, repoId, name, force),
+    renameBranch: (repoId: string, oldName: string, newName: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.GIT_RENAME_BRANCH, repoId, oldName, newName),
+    revert: (repoId: string, sha: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.GIT_REVERT, repoId, sha),
+    amend: (repoId: string, message: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.GIT_AMEND, repoId, message),
+    cherryPick: (repoId: string, sha: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.GIT_CHERRY_PICK, repoId, sha),
+    remotes: (repoId: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.GIT_REMOTES, repoId),
+    unstageAll: (repoId: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.GIT_UNSTAGE_ALL, repoId),
+    diffStaged: (repoId: string, file?: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.GIT_DIFF_STAGED, repoId, file)
   },
 
   // ─── Docker ────────────────────────────────────────────────────────────────

@@ -28,76 +28,111 @@ function rowToRepo(row: typeof repos.$inferSelect): Repo {
 
 export function registerRepoHandlers(): void {
   ipcMain.handle(IPC_CHANNELS.REPOS_LIST, async () => {
-    const rows = await db.select().from(repos)
-    return rows.map(rowToRepo)
+    try {
+      const rows = await db.select().from(repos)
+      return rows.map(rowToRepo)
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      throw new Error(`Erro ao listar repositórios: ${msg}`)
+    }
   })
 
   ipcMain.handle(IPC_CHANNELS.REPOS_LIST_GITHUB, async () => {
-    return listUserRepos()
+    try {
+      return await listUserRepos()
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      if (msg.includes('401') || msg.includes('Bad credentials')) {
+        throw new Error('Erro ao buscar repositórios do GitHub: token inválido ou expirado. Faça login novamente.')
+      }
+      if (msg.includes('network') || msg.includes('ENOTFOUND') || msg.includes('fetch')) {
+        throw new Error('Erro ao buscar repositórios do GitHub: sem conexão com a internet.')
+      }
+      if (msg.includes('rate limit') || msg.includes('403')) {
+        throw new Error('Erro ao buscar repositórios do GitHub: limite de requisições atingido. Aguarde alguns minutos.')
+      }
+      throw new Error(`Erro ao buscar repositórios do GitHub: ${msg}`)
+    }
   })
 
   ipcMain.handle(IPC_CHANNELS.REPOS_ADD, async (_, repoData: Partial<Repo>) => {
-    const existing = await db
-      .select()
-      .from(repos)
-      .where(eq(repos.id, repoData.id!))
-      .limit(1)
+    try {
+      const existing = await db
+        .select()
+        .from(repos)
+        .where(eq(repos.id, repoData.id!))
+        .limit(1)
 
-    if (existing.length > 0) {
-      throw new Error(`Repositório já adicionado: ${repoData.id}`)
-    }
-
-    await db.insert(repos).values({
-      id: repoData.id!,
-      name: repoData.name!,
-      owner: repoData.owner!,
-      fullName: repoData.fullName!,
-      localPath: repoData.localPath ?? null,
-      remoteUrl: repoData.remoteUrl ?? null,
-      defaultBranch: repoData.defaultBranch ?? 'main',
-      watchBranches: JSON.stringify(repoData.watchBranches ?? ['main']),
-      pollInterval: repoData.pollInterval ?? 60,
-      autoRun: repoData.autoRun ? 1 : 0,
-      notifications: repoData.notifications ? 1 : 0
-    })
-
-    if (repoData.localPath) {
-      const workflowsPath = join(repoData.localPath, WORKFLOWS_DIR)
-      if (!existsSync(workflowsPath)) {
-        mkdirSync(workflowsPath, { recursive: true })
+      if (existing.length > 0) {
+        throw new Error(`Repositório já adicionado: ${repoData.fullName ?? repoData.id}`)
       }
-      scheduleSync(repoData.id!, repoData.pollInterval ?? 60)
-    }
 
-    const [created] = await db.select().from(repos).where(eq(repos.id, repoData.id!))
-    return rowToRepo(created)
+      await db.insert(repos).values({
+        id: repoData.id!,
+        name: repoData.name!,
+        owner: repoData.owner!,
+        fullName: repoData.fullName!,
+        localPath: repoData.localPath ?? null,
+        remoteUrl: repoData.remoteUrl ?? null,
+        defaultBranch: repoData.defaultBranch ?? 'main',
+        watchBranches: JSON.stringify(repoData.watchBranches ?? ['main']),
+        pollInterval: repoData.pollInterval ?? 60,
+        autoRun: repoData.autoRun ? 1 : 0,
+        notifications: repoData.notifications ? 1 : 0
+      })
+
+      if (repoData.localPath) {
+        const workflowsPath = join(repoData.localPath, WORKFLOWS_DIR)
+        if (!existsSync(workflowsPath)) {
+          mkdirSync(workflowsPath, { recursive: true })
+        }
+        scheduleSync(repoData.id!, repoData.pollInterval ?? 60)
+      }
+
+      const [created] = await db.select().from(repos).where(eq(repos.id, repoData.id!))
+      return rowToRepo(created)
+    } catch (err) {
+      if (err instanceof Error && err.message.startsWith('Repositório já adicionado')) throw err
+      const msg = err instanceof Error ? err.message : String(err)
+      throw new Error(`Erro ao adicionar repositório: ${msg}`)
+    }
   })
 
   ipcMain.handle(IPC_CHANNELS.REPOS_UPDATE, async (_, id: string, updates: Partial<Repo>) => {
-    const updateData: Partial<typeof repos.$inferInsert> = {}
-    if (updates.localPath !== undefined) updateData.localPath = updates.localPath
-    if (updates.pollInterval !== undefined) updateData.pollInterval = updates.pollInterval
-    if (updates.autoRun !== undefined) updateData.autoRun = updates.autoRun ? 1 : 0
-    if (updates.notifications !== undefined) updateData.notifications = updates.notifications ? 1 : 0
-    if (updates.watchBranches !== undefined) updateData.watchBranches = JSON.stringify(updates.watchBranches)
-    if (updates.gitUserName !== undefined) updateData.gitUserName = updates.gitUserName
-    if (updates.gitUserEmail !== undefined) updateData.gitUserEmail = updates.gitUserEmail
+    try {
+      const updateData: Partial<typeof repos.$inferInsert> = {}
+      if (updates.localPath !== undefined) updateData.localPath = updates.localPath
+      if (updates.pollInterval !== undefined) updateData.pollInterval = updates.pollInterval
+      if (updates.autoRun !== undefined) updateData.autoRun = updates.autoRun ? 1 : 0
+      if (updates.notifications !== undefined) updateData.notifications = updates.notifications ? 1 : 0
+      if (updates.watchBranches !== undefined) updateData.watchBranches = JSON.stringify(updates.watchBranches)
+      if (updates.gitUserName !== undefined) updateData.gitUserName = updates.gitUserName
+      if (updates.gitUserEmail !== undefined) updateData.gitUserEmail = updates.gitUserEmail
 
-    await db.update(repos).set(updateData).where(eq(repos.id, id))
+      await db.update(repos).set(updateData).where(eq(repos.id, id))
 
-    if (updates.pollInterval) {
-      const [row] = await db.select().from(repos).where(eq(repos.id, id))
-      if (row?.localPath) scheduleSync(id, updates.pollInterval)
+      if (updates.pollInterval) {
+        const [row] = await db.select().from(repos).where(eq(repos.id, id))
+        if (row?.localPath) scheduleSync(id, updates.pollInterval)
+      }
+
+      const [updated] = await db.select().from(repos).where(eq(repos.id, id))
+      return rowToRepo(updated)
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      throw new Error(`Erro ao atualizar repositório: ${msg}`)
     }
-
-    const [updated] = await db.select().from(repos).where(eq(repos.id, id))
-    return rowToRepo(updated)
   })
 
   ipcMain.handle(IPC_CHANNELS.REPOS_REMOVE, async (_, id: string) => {
-    unscheduleSync(id)
-    await db.delete(repos).where(eq(repos.id, id))
-    return { success: true }
+    try {
+      unscheduleSync(id)
+      await db.delete(repos).where(eq(repos.id, id))
+      return { success: true }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      throw new Error(`Erro ao remover repositório: ${msg}`)
+    }
   })
 
   ipcMain.handle(IPC_CHANNELS.REPOS_CLONE, async (_, repoId: string, remoteUrl: string) => {
@@ -115,9 +150,29 @@ export function registerRepoHandlers(): void {
     const localPath = join(basePath, repoName)
     const token = loadToken()
 
-    if (!token) throw new Error('Não autenticado')
+    if (!token) throw new Error('Não autenticado. Faça login antes de clonar.')
 
-    await cloneRepo(remoteUrl, localPath, token)
+    try {
+      await cloneRepo(remoteUrl, localPath, token)
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      if (msg.includes('already exists')) {
+        throw new Error(`A pasta "${localPath}" já existe. Escolha outro local ou delete a pasta existente.`)
+      }
+      if (msg.includes('authentication') || msg.includes('401') || msg.includes('403')) {
+        throw new Error('Falha na autenticação ao clonar. Verifique se seu token tem permissão de acesso ao repositório.')
+      }
+      if (msg.includes('not found') || msg.includes('404')) {
+        throw new Error('Repositório não encontrado. Verifique se a URL está correta e se você tem acesso.')
+      }
+      if (msg.includes('ENOSPC') || msg.includes('No space')) {
+        throw new Error('Sem espaço em disco para clonar o repositório.')
+      }
+      if (msg.includes('EACCES') || msg.includes('permission denied')) {
+        throw new Error(`Sem permissão para escrever na pasta "${basePath}". Escolha outro local.`)
+      }
+      throw new Error(`Erro ao clonar repositório: ${msg}`)
+    }
 
     const workflowsPath = join(localPath, WORKFLOWS_DIR)
     if (!existsSync(workflowsPath)) {
@@ -137,18 +192,23 @@ export function registerRepoHandlers(): void {
       return { cancelled: true }
     }
 
-    const localPath = result.filePaths[0]
-    await db.update(repos).set({ localPath }).where(eq(repos.id, id))
+    try {
+      const localPath = result.filePaths[0]
+      await db.update(repos).set({ localPath }).where(eq(repos.id, id))
 
-    const workflowsPath = join(localPath, WORKFLOWS_DIR)
-    if (!existsSync(workflowsPath)) {
-      mkdirSync(workflowsPath, { recursive: true })
+      const workflowsPath = join(localPath, WORKFLOWS_DIR)
+      if (!existsSync(workflowsPath)) {
+        mkdirSync(workflowsPath, { recursive: true })
+      }
+
+      const [row] = await db.select().from(repos).where(eq(repos.id, id))
+      if (row) scheduleSync(id, row.pollInterval ?? 60)
+
+      return { localPath }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      throw new Error(`Erro ao vincular pasta: ${msg}`)
     }
-
-    const [row] = await db.select().from(repos).where(eq(repos.id, id))
-    if (row) scheduleSync(id, row.pollInterval ?? 60)
-
-    return { localPath }
   })
 
   ipcMain.handle(IPC_CHANNELS.REPOS_SELECT_FOLDER, async () => {
@@ -161,15 +221,26 @@ export function registerRepoHandlers(): void {
   })
 
   ipcMain.handle(IPC_CHANNELS.REPOS_SYNC, async (_, id: string) => {
-    const { forceSyncRepo } = await import('../services/syncService')
-    await forceSyncRepo(id)
-    return { success: true }
+    try {
+      const { forceSyncRepo } = await import('../services/syncService')
+      await forceSyncRepo(id)
+      return { success: true }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      if (msg.includes('authentication') || msg.includes('401')) {
+        throw new Error('Erro ao sincronizar: autenticação falhou. Verifique seu token.')
+      }
+      if (msg.includes('network') || msg.includes('ENOTFOUND')) {
+        throw new Error('Erro ao sincronizar: sem conexão com o servidor remoto.')
+      }
+      throw new Error(`Erro ao sincronizar repositório: ${msg}`)
+    }
   })
 
   // ─── Open local folder in file explorer ────────────────────────────────────
   ipcMain.handle(IPC_CHANNELS.REPOS_OPEN_FOLDER, async (_, localPath: string) => {
     if (!localPath || !existsSync(localPath)) {
-      throw new Error('Pasta não encontrada: ' + localPath)
+      throw new Error(`Pasta não encontrada: "${localPath}". Verifique se ela ainda existe.`)
     }
     shell.openPath(localPath)
     return { success: true }
@@ -177,48 +248,77 @@ export function registerRepoHandlers(): void {
 
   // ─── Delete the .orbit directory from the repo ────────────────────────────
   ipcMain.handle(IPC_CHANNELS.REPOS_DELETE_ORBIT_DIR, async (_, localPath: string) => {
-    const orbitPath = join(localPath, '.orbit')
-    if (!existsSync(orbitPath)) return { success: true, deleted: false }
-    rmSync(orbitPath, { recursive: true, force: true })
-    return { success: true, deleted: true }
+    try {
+      const orbitPath = join(localPath, '.orbit')
+      if (!existsSync(orbitPath)) return { success: true, deleted: false }
+      rmSync(orbitPath, { recursive: true, force: true })
+      return { success: true, deleted: true }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      if (msg.includes('EACCES') || msg.includes('EPERM') || msg.includes('permission')) {
+        throw new Error('Sem permissão para deletar a pasta .orbit. Feche programas que podem estar usando os arquivos.')
+      }
+      if (msg.includes('EBUSY') || msg.includes('resource busy')) {
+        throw new Error('A pasta .orbit está em uso por outro processo. Feche-o e tente novamente.')
+      }
+      throw new Error(`Erro ao deletar pasta .orbit: ${msg}`)
+    }
   })
 
   // ─── Check if .github/workflows/ exists and list its files ────────────────
   ipcMain.handle(IPC_CHANNELS.REPOS_CHECK_GITHUB_WORKFLOWS, async (_, localPath: string) => {
-    const githubDir = join(localPath, GITHUB_WORKFLOWS_DIR)
-    if (!existsSync(githubDir)) return { found: false, files: [] }
-    const files = readdirSync(githubDir)
-      .filter((f) => f.endsWith('.yml') || f.endsWith('.yaml'))
-    return { found: files.length > 0, files }
+    try {
+      const githubDir = join(localPath, GITHUB_WORKFLOWS_DIR)
+      if (!existsSync(githubDir)) return { found: false, files: [] }
+      const files = readdirSync(githubDir)
+        .filter((f) => f.endsWith('.yml') || f.endsWith('.yaml'))
+      return { found: files.length > 0, files }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      throw new Error(`Erro ao verificar workflows do GitHub: ${msg}`)
+    }
   })
 
   // ─── List .github/workflows/ files with content ───────────────────────────
   ipcMain.handle(IPC_CHANNELS.REPOS_LIST_GITHUB_WORKFLOWS, async (_, localPath: string) => {
-    const githubDir = join(localPath, GITHUB_WORKFLOWS_DIR)
-    if (!existsSync(githubDir)) return []
-    return readdirSync(githubDir)
-      .filter((f) => f.endsWith('.yml') || f.endsWith('.yaml'))
-      .map((f) => ({ file: f, path: join(githubDir, f) }))
+    try {
+      const githubDir = join(localPath, GITHUB_WORKFLOWS_DIR)
+      if (!existsSync(githubDir)) return []
+      return readdirSync(githubDir)
+        .filter((f) => f.endsWith('.yml') || f.endsWith('.yaml'))
+        .map((f) => ({ file: f, path: join(githubDir, f) }))
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      throw new Error(`Erro ao listar workflows do GitHub: ${msg}`)
+    }
   })
 
   // ─── Import workflow files from .github/workflows/ to .orbit/workflows/ ───
   ipcMain.handle(
     IPC_CHANNELS.REPOS_IMPORT_GITHUB_WORKFLOWS,
     async (_, localPath: string) => {
-      const githubDir = join(localPath, GITHUB_WORKFLOWS_DIR)
-      const orbitDir = join(localPath, WORKFLOWS_DIR)
+      try {
+        const githubDir = join(localPath, GITHUB_WORKFLOWS_DIR)
+        const orbitDir = join(localPath, WORKFLOWS_DIR)
 
-      if (!existsSync(githubDir)) throw new Error('.github/workflows não encontrado')
-      if (!existsSync(orbitDir)) mkdirSync(orbitDir, { recursive: true })
+        if (!existsSync(githubDir)) throw new Error('Pasta .github/workflows/ não encontrada neste repositório.')
+        if (!existsSync(orbitDir)) mkdirSync(orbitDir, { recursive: true })
 
-      const files = readdirSync(githubDir)
-        .filter((f) => f.endsWith('.yml') || f.endsWith('.yaml'))
+        const files = readdirSync(githubDir)
+          .filter((f) => f.endsWith('.yml') || f.endsWith('.yaml'))
 
-      for (const file of files) {
-        copyFileSync(join(githubDir, file), join(orbitDir, file))
+        if (files.length === 0) throw new Error('Nenhum arquivo de workflow encontrado em .github/workflows/.')
+
+        for (const file of files) {
+          copyFileSync(join(githubDir, file), join(orbitDir, file))
+        }
+
+        return { success: true, count: files.length, files }
+      } catch (err) {
+        if (err instanceof Error && (err.message.includes('não encontrad') || err.message.includes('Nenhum arquivo'))) throw err
+        const msg = err instanceof Error ? err.message : String(err)
+        throw new Error(`Erro ao importar workflows: ${msg}`)
       }
-
-      return { success: true, count: files.length, files }
     }
   )
 

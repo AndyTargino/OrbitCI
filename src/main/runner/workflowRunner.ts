@@ -12,6 +12,7 @@ import { resolveSecrets } from '../services/secretService'
 import { ProcessMonitor } from '../services/processMonitor'
 import { sendRunLog, sendToRenderer, notifyRunComplete, notifyRunStart } from '../services/notifyService'
 import { getCurrentSha, getCurrentBranch } from '../git/gitEngine'
+import { getStoredToken } from '../services/githubService'
 import { IPC_CHANNELS, WORKFLOWS_DIR, DEFAULT_MAX_CONCURRENT } from '@shared/constants'
 import type { WorkflowDefinition, JobDefinition, RunStatus } from '@shared/types'
 
@@ -266,8 +267,12 @@ export class WorkflowRunner {
     }
     try { mkdirSync(join(runTmpDir, 'tool_cache'), { recursive: true }) } catch { /* ignore */ }
 
-    // Base context
+    // Base context — auto-inject GITHUB_TOKEN from auth if not in secrets
     const secrets = resolveSecrets([repoId])
+    const ghToken = getStoredToken()
+    if (ghToken && !secrets['GITHUB_TOKEN']) {
+      secrets['GITHUB_TOKEN'] = ghToken
+    }
     const runNumeric = parseInt(runId.replace(/-/g, '').slice(0, 8), 16)
     const baseEnv: Record<string, string> = {
       // GitHub Actions standard variables
@@ -346,11 +351,13 @@ export class WorkflowRunner {
       env: { ...baseEnv },
       secrets,
       OrbitCI: { run_id: runId, timestamp: startedAt, workspace },
-      steps: {}
+      steps: {},
+      needs: {}
     }
 
     const jobNames = Object.keys(wf.jobs)
-    const jobResults: Record<string, 'success' | 'failure' | 'cancelled'> = {}
+    const jobResults: Record<string, 'success' | 'failure' | 'cancelled' | 'skipped'> = {}
+    const jobOutputs: Record<string, Record<string, string>> = {}
     let finalStatus: RunStatus = 'success'
 
     // Create process monitor for resource tracking
@@ -380,8 +387,33 @@ export class WorkflowRunner {
           if (anyDepFailed) {
             completed.add(jobName)
             jobResults[jobName] = 'failure'
+            jobOutputs[jobName] = {}
             await log(`⏭ Job '${jobName}' ignorado (dependência falhou)`, 'skip')
             continue
+          }
+
+          // Skip jobs whose runs-on doesn't match the current platform
+          if (job['runs-on'] && !platformMatches(job['runs-on'])) {
+            completed.add(jobName)
+            jobResults[jobName] = 'skipped'
+            jobOutputs[jobName] = {}
+            await log(`⏭ Job '${jobName}' ignorado (runs-on: ${job['runs-on']} ≠ ${currentPlatformLabel()})`, 'skip')
+            continue
+          }
+
+          // Build needs context so dependent jobs can access ${{ needs.<job>.outputs.<key> }}
+          const needsCtx: Record<string, { outputs: Record<string, string>; result: string }> = {}
+          for (const dep of needs) {
+            needsCtx[dep] = {
+              outputs: jobOutputs[dep] ?? {},
+              result: jobResults[dep] ?? 'success'
+            }
+          }
+
+          const jobCtx: ExpressionContext = {
+            ...ctx,
+            needs: needsCtx,
+            steps: {} // Reset steps per job
           }
 
           const result = await runJob({
@@ -391,13 +423,14 @@ export class WorkflowRunner {
             job,
             workspace,
             baseEnv,
-            baseCtx: ctx,
+            baseCtx: jobCtx,
             cancelCheck: () => cancelFlags.get(runId) ?? false,
             monitor
           })
 
           completed.add(jobName)
           jobResults[jobName] = result.status
+          jobOutputs[jobName] = result.outputs
           if (result.status === 'failure') finalStatus = 'failure'
           if (result.status === 'cancelled') finalStatus = 'cancelled'
         }
@@ -518,4 +551,20 @@ function resolveEnvDefs(
 
 function workflowFile(runId: string): string {
   return `run-${runId.slice(0, 8)}`
+}
+
+/** Check if a `runs-on` value matches the current OS */
+function platformMatches(runsOn: string): boolean {
+  const label = runsOn.toLowerCase()
+  const plat = process.platform
+  if (plat === 'win32') return label.includes('windows')
+  if (plat === 'darwin') return label.includes('macos') || label.includes('mac')
+  // linux
+  return label.includes('ubuntu') || label.includes('linux')
+}
+
+function currentPlatformLabel(): string {
+  if (process.platform === 'win32') return 'Windows'
+  if (process.platform === 'darwin') return 'macOS'
+  return 'Linux'
 }

@@ -16,6 +16,8 @@ import type {
   GitCommit,
   GitBranch,
   GitTag,
+  GitStash,
+  GitRemote,
   DockerStatus,
   DockerContainer,
   Secret
@@ -89,6 +91,19 @@ export interface ElectronAPI {
     checkout: (repoId: string, ref: string) => Promise<void>
     tags: (repoId: string) => Promise<GitTag[]>
     createTag: (repoId: string, name: string, message?: string) => Promise<void>
+    merge: (repoId: string, branch: string) => Promise<{ success: boolean; conflicts: string[] }>
+    mergeAbort: (repoId: string) => Promise<{ success: boolean }>
+    stash: (repoId: string, message?: string) => Promise<{ success: boolean }>
+    stashPop: (repoId: string) => Promise<{ success: boolean }>
+    stashList: (repoId: string) => Promise<GitStash[]>
+    deleteBranch: (repoId: string, name: string, force?: boolean) => Promise<{ success: boolean }>
+    renameBranch: (repoId: string, oldName: string, newName: string) => Promise<{ success: boolean }>
+    revert: (repoId: string, sha: string) => Promise<{ success: boolean }>
+    amend: (repoId: string, message: string) => Promise<{ sha: string; success: boolean }>
+    cherryPick: (repoId: string, sha: string) => Promise<{ success: boolean }>
+    remotes: (repoId: string) => Promise<GitRemote[]>
+    unstageAll: (repoId: string) => Promise<GitStatus>
+    diffStaged: (repoId: string, file?: string) => Promise<string>
   }
   docker: {
     status: () => Promise<DockerStatus>

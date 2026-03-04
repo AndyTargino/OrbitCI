@@ -24,6 +24,9 @@ export interface ExpressionContext {
     workspace: string
   }
   steps: Record<string, { outputs: Record<string, string>; outcome: string }>
+  needs: Record<string, { outputs: Record<string, string>; result: string }>
+  /** Current job status for success()/failure()/cancelled() functions */
+  job?: { status: 'success' | 'failure' | 'cancelled' }
 }
 
 export function evaluateExpression(template: string, ctx: ExpressionContext): string {
@@ -78,6 +81,24 @@ function evalExpr(expr: string, ctx: ExpressionContext): unknown {
 
   // Number
   if (!isNaN(Number(expr))) return Number(expr)
+
+  // Logical operators (lowest precedence, checked first)
+  for (const op of ['&&', '||']) {
+    const parts = splitOnOperator(expr, op)
+    if (parts) {
+      const [left, right] = parts
+      const l = evalExpr(left.trim(), ctx)
+      const r = evalExpr(right.trim(), ctx)
+      if (op === '&&') return Boolean(l) && Boolean(r)
+      if (op === '||') return Boolean(l) || Boolean(r)
+    }
+  }
+
+  // Negation operator
+  if (expr.startsWith('!')) {
+    const inner = expr.slice(1).trim()
+    return !evalExpr(inner, ctx)
+  }
 
   // Comparison operators
   for (const op of ['!=', '==', '>=', '<=', '>', '<']) {
@@ -153,10 +174,19 @@ function callBuiltinFunc(name: string, argsStr: string, ctx: ExpressionContext):
       const [str, suffix] = args.map(String)
       return str.endsWith(suffix)
     }
-    case 'success': return true
-    case 'failure': return false
+    case 'success': {
+      const jobStatus = ctx.job?.status ?? 'success'
+      return jobStatus === 'success'
+    }
+    case 'failure': {
+      const jobStatus = ctx.job?.status ?? 'success'
+      return jobStatus === 'failure'
+    }
     case 'always': return true
-    case 'cancelled': return false
+    case 'cancelled': {
+      const jobStatus = ctx.job?.status ?? 'success'
+      return jobStatus === 'cancelled'
+    }
     default:
       return ''
   }

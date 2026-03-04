@@ -84,7 +84,7 @@ export function Editor(): JSX.Element {
         await electron.workflows.save(decodedId, name, content)
       }
       notify('success', 'Workflow salvo!', name)
-      navigate(`/dashboard/${repoId}`)
+      navigate(`/repo/${repoId}/workflows`)
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Erro ao salvar'
       notify('failure', 'Erro ao salvar', msg)

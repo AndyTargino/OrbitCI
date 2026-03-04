@@ -14,6 +14,10 @@ export function getOctokit(): Octokit {
   return octokit
 }
 
+export function getStoredToken(): string | null {
+  return storedToken
+}
+
 export function clearGitHub(): void {
   octokit = null
   storedToken = null

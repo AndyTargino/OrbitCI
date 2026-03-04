@@ -266,6 +266,97 @@ export async function getCurrentBranch(localPath: string): Promise<string> {
   return status.current ?? 'HEAD'
 }
 
+export async function merge(localPath: string, branch: string): Promise<{ success: boolean; conflicts: string[] }> {
+  const g = git(localPath)
+  try {
+    await g.merge([branch])
+    return { success: true, conflicts: [] }
+  } catch (err: unknown) {
+    const status = await g.status()
+    const conflicts = status.conflicted || []
+    if (conflicts.length > 0) {
+      return { success: false, conflicts }
+    }
+    throw err
+  }
+}
+
+export async function abortMerge(localPath: string): Promise<void> {
+  const g = git(localPath)
+  await g.merge(['--abort'])
+}
+
+export async function stashSave(localPath: string, message?: string): Promise<void> {
+  const g = git(localPath)
+  const args = ['push']
+  if (message) args.push('-m', message)
+  await g.stash(args)
+}
+
+export async function stashPop(localPath: string): Promise<void> {
+  const g = git(localPath)
+  await g.stash(['pop'])
+}
+
+export async function stashList(localPath: string): Promise<{ index: number; message: string }[]> {
+  const g = git(localPath)
+  const result = await g.stash(['list', '--format=%gd|||%gs'])
+  if (!result.trim()) return []
+  return result.trim().split('\n').map((line) => {
+    const [ref, msg] = line.split('|||')
+    const index = parseInt(ref.replace('stash@{', '').replace('}', ''), 10)
+    return { index, message: msg || '' }
+  })
+}
+
+export async function deleteBranch(localPath: string, name: string, force = false): Promise<void> {
+  const g = git(localPath)
+  await g.branch([force ? '-D' : '-d', name])
+}
+
+export async function renameBranch(localPath: string, oldName: string, newName: string): Promise<void> {
+  const g = git(localPath)
+  await g.branch(['-m', oldName, newName])
+}
+
+export async function revertCommit(localPath: string, sha: string): Promise<void> {
+  const g = git(localPath)
+  await g.revert(sha)
+}
+
+export async function amendCommit(localPath: string, message: string): Promise<string> {
+  const g = git(localPath)
+  const result = await g.commit(message, undefined, { '--amend': null })
+  return result.commit
+}
+
+export async function cherryPick(localPath: string, sha: string): Promise<void> {
+  const g = git(localPath)
+  await g.raw(['cherry-pick', sha])
+}
+
+export async function getRemotes(localPath: string): Promise<{ name: string; fetchUrl: string; pushUrl: string }[]> {
+  const g = git(localPath)
+  const remotes = await g.getRemotes(true)
+  return remotes.map((r) => ({
+    name: r.name,
+    fetchUrl: r.refs.fetch || '',
+    pushUrl: r.refs.push || ''
+  }))
+}
+
+export async function unstageAll(localPath: string): Promise<void> {
+  const g = git(localPath)
+  await g.reset(['HEAD'])
+}
+
+export async function getDiffStaged(localPath: string, file?: string): Promise<string> {
+  const g = git(localPath)
+  const args = ['--staged']
+  if (file) args.push('--', file)
+  return g.diff(args)
+}
+
 export function invalidateCache(localPath: string): void {
   instances.delete(localPath)
 }
