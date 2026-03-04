@@ -1,6 +1,6 @@
 {
   "name": "orbit-ci",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Local GitHub Actions runner with desktop GUI",
   "author": "Anderson Targino <andytargino@outlook.com>",
   "main": "out/main/index.js",
