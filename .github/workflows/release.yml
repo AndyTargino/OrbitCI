@@ -311,7 +311,7 @@ jobs:
         run: npm ci
 
       - name: Install Python setuptools
-        run: python3 -m pip install setuptools
+        run: python3 -m pip install setuptools --break-system-packages
 
       - name: Build and Publish
         env:

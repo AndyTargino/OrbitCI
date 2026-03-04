@@ -2,6 +2,7 @@
   "name": "orbit-ci",
   "version": "0.4.0",
   "description": "Local GitHub Actions runner with desktop GUI",
+  "author": "Anderson Targino <andytargino@outlook.com>",
   "main": "out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",
@@ -113,7 +114,8 @@
         "AppImage",
         "deb"
       ],
-      "icon": "icon.png"
+      "icon": "icon.png",
+      "maintainer": "Anderson Targino <andytargino@outlook.com>"
     },
     "nsis": {
       "oneClick": false,
