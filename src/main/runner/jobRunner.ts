@@ -165,16 +165,20 @@ export async function runJob(opts: JobRunnerOpts): Promise<JobResult> {
       if (outputFilePath && existsSync(outputFilePath)) {
         try {
           const content = readFileSync(outputFilePath, 'utf-8').trim()
-          for (const line of content.split('\n')) {
-            const eq = line.indexOf('=')
-            if (eq > 0) {
-              const k = line.slice(0, eq).trim()
-              const v = line.slice(eq + 1)
-              if (k) { outputs[k] = v; result.outputs[k] = v }
-            }
+          const parsed = parseGitHubOutput(content)
+          for (const [k, v] of Object.entries(parsed)) {
+            outputs[k] = v
+            result.outputs[k] = v
           }
           writeFileSync(outputFilePath, '') // Clear for next step
         } catch { /* ignore */ }
+      }
+
+      // Update ctx.steps so subsequent steps can use ${{ steps.<id>.outputs.<key> }}
+      const stepIdKey = step.id ?? step.name?.replace(/\s+/g, '_').toLowerCase() ?? `step_${i}`
+      ctx.steps[stepIdKey] = {
+        outputs: { ...result.outputs },
+        outcome: result.status
       }
 
       // Parse GITHUB_ENV file → propagate env vars to subsequent steps
@@ -182,13 +186,9 @@ export async function runJob(opts: JobRunnerOpts): Promise<JobResult> {
       if (envFilePath && existsSync(envFilePath)) {
         try {
           const content = readFileSync(envFilePath, 'utf-8').trim()
-          for (const line of content.split('\n')) {
-            const eq = line.indexOf('=')
-            if (eq > 0) {
-              const k = line.slice(0, eq).trim()
-              const v = line.slice(eq + 1)
-              if (k) { env[k] = v }
-            }
+          const parsedEnv = parseGitHubOutput(content)
+          for (const [k, v] of Object.entries(parsedEnv)) {
+            env[k] = v
           }
         } catch { /* ignore */ }
       }
@@ -242,4 +242,46 @@ async function finalizeJob(
     finishedAt: new Date().toISOString(),
     durationMs
   }).where(eq(runJobs.id, jobId))
+}
+
+/**
+ * Parse GITHUB_OUTPUT file content supporting both simple `key=value`
+ * and multi-line heredoc format: `key<<DELIMITER\n...content...\nDELIMITER`
+ */
+function parseGitHubOutput(content: string): Record<string, string> {
+  const result: Record<string, string> = {}
+  if (!content) return result
+
+  const lines = content.split('\n')
+  let i = 0
+  while (i < lines.length) {
+    const line = lines[i]
+
+    // Multi-line heredoc: key<<DELIMITER
+    const heredocMatch = line.match(/^(\w+)<<(.+)$/)
+    if (heredocMatch) {
+      const [, key, delimiter] = heredocMatch
+      const valueParts: string[] = []
+      i++
+      while (i < lines.length && lines[i] !== delimiter) {
+        valueParts.push(lines[i])
+        i++
+      }
+      result[key] = valueParts.join('\n')
+      i++ // skip delimiter line
+      continue
+    }
+
+    // Simple key=value
+    const eqIdx = line.indexOf('=')
+    if (eqIdx > 0) {
+      const k = line.slice(0, eqIdx).trim()
+      const v = line.slice(eqIdx + 1)
+      if (k) result[k] = v
+    }
+
+    i++
+  }
+
+  return result
 }
