@@ -1,6 +1,6 @@
 {
   "name": "orbit-ci",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Local GitHub Actions runner with desktop GUI",
   "main": "out/main/index.js",
   "scripts": {
