@@ -13,6 +13,7 @@ export interface ExpressionContext {
     actor: string
     event_name: string
     workspace: string
+    [key: string]: unknown // Allow nested properties like event.release.*
   }
   inputs: Record<string, string>
   env: Record<string, string>

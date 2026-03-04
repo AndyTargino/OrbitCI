@@ -1,7 +1,7 @@
 import { db } from '../db'
 import { repos } from '../db/schema'
 import { eq } from 'drizzle-orm'
-import { getLatestCommitSha } from './githubService'
+import { getLatestCommitSha, getLatestRelease } from './githubService'
 import { notifySyncEvent } from './notifyService'
 import { loadToken } from './credentialService'
 import type { Repo } from '@shared/types'
@@ -106,6 +106,32 @@ async function syncRepo(repoId: string): Promise<void> {
         sha: remoteSha,
         localPath: repo.localPath
       })
+    }
+
+    // 6. Check for new GitHub releases
+    if (repo.autoRun && runner) {
+      try {
+        const latestRelease = await getLatestRelease(owner, repoName)
+        if (latestRelease && latestRelease.tag_name !== repo.lastReleaseTag) {
+          notifySyncEvent(repoId, 'new-release', `Nova release detectada: ${latestRelease.tag_name}`)
+
+          await db.update(repos).set({ lastReleaseTag: latestRelease.tag_name }).where(eq(repos.id, repoId))
+
+          await runner.triggerEvent(repoId, 'release', {
+            branch,
+            sha: remoteSha,
+            release: {
+              tag_name: latestRelease.tag_name,
+              name: latestRelease.name,
+              body: latestRelease.body,
+              draft: latestRelease.draft,
+              prerelease: latestRelease.prerelease,
+              html_url: latestRelease.html_url,
+              id: latestRelease.id
+            }
+          })
+        }
+      } catch { /* release check is non-critical */ }
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)

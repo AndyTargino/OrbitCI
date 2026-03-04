@@ -1,5 +1,5 @@
 import Dockerode from 'dockerode'
-import { exec } from 'child_process'
+import { exec, spawn } from 'child_process'
 import { shell } from 'electron'
 import type { DockerStatus, DockerContainer, DockerImage } from '@shared/types'
 import { sendToRenderer } from './notifyService'
@@ -199,71 +199,319 @@ export async function cleanupOrphanedContainers(): Promise<void> {
   }
 }
 
-// ─── Docker installation ───────────────────────────────────────────────────────
+// ─── Docker installation with live progress ──────────────────────────────────
 export type DockerInstallResult =
   | { status: 'success' }
   | { status: 'opened_browser'; url: string }
   | { status: 'error'; message: string }
 
+function installLog(message: string, type: 'step' | 'output' | 'error' | 'success' = 'output') {
+  sendToRenderer(IPC_CHANNELS.EVENT_DOCKER_INSTALL, { message, type })
+}
+
+/** Run a shell command with live stdout/stderr streaming to the renderer */
+function spawnWithLogs(
+  cmd: string,
+  args: string[],
+  label: string,
+  timeout = 600_000
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    installLog(`$ ${label}`, 'step')
+    const proc = spawn(cmd, args, {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      shell: true,
+      timeout
+    })
+
+    proc.stdout.on('data', (chunk: Buffer) => {
+      for (const line of chunk.toString('utf-8').split('\n')) {
+        if (line.trim()) installLog(line)
+      }
+    })
+
+    proc.stderr.on('data', (chunk: Buffer) => {
+      for (const line of chunk.toString('utf-8').split('\n')) {
+        if (line.trim()) installLog(line)
+      }
+    })
+
+    proc.on('close', (code) => {
+      if (code === 0) resolve()
+      else reject(new Error(`Exit code ${code}`))
+    })
+
+    proc.on('error', reject)
+  })
+}
+
+/** Run a command silently, return stdout */
+function execQuiet(cmd: string, timeout = 60_000): Promise<string> {
+  return new Promise((resolve, reject) => {
+    exec(cmd, { timeout }, (err, stdout) => {
+      if (err) reject(err)
+      else resolve(stdout)
+    })
+  })
+}
+
+/** Try to start the Docker daemon/service in background (no GUI window) */
+async function startDockerService(): Promise<boolean> {
+  // 1. Try starting the Windows service directly
+  try {
+    installLog('Iniciando serviço Docker (com.docker.service)...', 'step')
+    await execQuiet('powershell -Command "Start-Service com.docker.service -ErrorAction Stop"', 15_000)
+    installLog('Serviço Docker iniciado!', 'success')
+    return true
+  } catch {
+    installLog('Serviço com.docker.service não encontrado ou sem permissão.', 'output')
+  }
+
+  // 2. Try starting Docker Desktop in background (hidden window)
+  try {
+    installLog('Iniciando Docker Desktop em segundo plano...', 'step')
+    await execQuiet(
+      'powershell -Command "Start-Process \'C:\\Program Files\\Docker\\Docker\\Docker Desktop.exe\' -ArgumentList \'--minimize\' -WindowStyle Hidden -ErrorAction Stop"',
+      10_000
+    )
+    installLog('Docker Desktop iniciado em segundo plano! Aguarde alguns segundos e clique em "Verificar".', 'success')
+    return true
+  } catch {
+    // fallback
+  }
+
+  // 3. Last resort — try without --minimize
+  try {
+    await execQuiet(
+      'powershell -Command "Start-Process \'C:\\Program Files\\Docker\\Docker\\Docker Desktop.exe\' -WindowStyle Minimized -ErrorAction Stop"',
+      10_000
+    )
+    installLog('Docker Desktop iniciado (minimizado). Aguarde alguns segundos e clique em "Verificar".', 'success')
+    return true
+  } catch {
+    return false
+  }
+}
+
+async function installDockerWindows(): Promise<DockerInstallResult> {
+  // 0. Check if Docker Desktop is already installed but not running
+  installLog('Verificando se Docker Desktop já está instalado...', 'step')
+  try {
+    const checkOutput = await execQuiet(
+      'powershell -Command "Get-ItemProperty HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\* | Where-Object { $_.DisplayName -like \'*Docker Desktop*\' } | Select-Object -ExpandProperty DisplayName"',
+      15_000
+    )
+    if (checkOutput.trim()) {
+      installLog(`Docker Desktop já instalado: ${checkOutput.trim()}`, 'output')
+      const started = await startDockerService()
+      if (!started) {
+        installLog('Não foi possível iniciar automaticamente. Inicie o Docker Desktop manualmente e clique em "Verificar".', 'error')
+      }
+      return { status: 'success' }
+    }
+  } catch {
+    // Registry check failed — proceed with install
+  }
+
+  // 1. Try winget
+  installLog('Verificando winget...', 'step')
+  try {
+    const wingetOutput = await new Promise<string>((resolve, reject) => {
+      const proc = spawn('winget', ['install', '--id', 'Docker.DockerDesktop', '--silent', '--accept-source-agreements', '--accept-package-agreements'], {
+        stdio: ['ignore', 'pipe', 'pipe'],
+        shell: true,
+        timeout: 600_000
+      })
+      let output = ''
+      proc.stdout.on('data', (chunk: Buffer) => {
+        const text = chunk.toString('utf-8')
+        output += text
+        for (const line of text.split('\n')) {
+          if (line.trim()) installLog(line.trim())
+        }
+      })
+      proc.stderr.on('data', (chunk: Buffer) => {
+        const text = chunk.toString('utf-8')
+        output += text
+        for (const line of text.split('\n')) {
+          if (line.trim()) installLog(line.trim())
+        }
+      })
+      proc.on('close', (code) => {
+        if (code === 0) resolve(output)
+        else reject(new Error(`Exit code ${code}: ${output}`))
+      })
+      proc.on('error', reject)
+    })
+
+    // Check if winget said it's already installed
+    if (wingetOutput.includes('already installed') || wingetOutput.includes('No available upgrade') || wingetOutput.includes('No newer package')) {
+      installLog('Docker Desktop já está instalado via winget.', 'output')
+      await startDockerService()
+      return { status: 'success' }
+    }
+
+    installLog('Docker Desktop instalado via winget!', 'success')
+    await startDockerService()
+    return { status: 'success' }
+  } catch {
+    installLog('winget falhou ou não disponível, tentando download direto...', 'output')
+  }
+
+  // 2. Download via PowerShell and run silently
+  const installerUrl = 'https://desktop.docker.com/win/main/amd64/Docker%20Desktop%20Installer.exe'
+  const tempDir = process.env.TEMP ?? process.env.TMP ?? 'C:\\\\Temp'
+  const installerPath = `${tempDir}\\\\DockerDesktopInstaller_${Date.now()}.exe`
+
+  try {
+    installLog('Baixando Docker Desktop Installer...', 'step')
+    await spawnWithLogs(
+      'powershell',
+      ['-Command', `"$ProgressPreference='SilentlyContinue'; Invoke-WebRequest -Uri '${installerUrl}' -OutFile '${installerPath}' -UseBasicParsing"` ],
+      `Download → ${installerPath}`,
+      600_000
+    )
+    installLog('Download concluído. Executando instalador...', 'step')
+    await spawnWithLogs(
+      installerPath,
+      ['install', '--quiet', '--accept-license'],
+      'Docker Desktop Installer (silencioso)',
+      600_000
+    )
+    // Cleanup temp file
+    try { await execQuiet(`del "${installerPath}"`, 5_000) } catch { /* ignore */ }
+    installLog('Docker Desktop instalado com sucesso!', 'success')
+    return { status: 'success' }
+  } catch {
+    // Cleanup temp file on failure
+    try { await execQuiet(`del "${installerPath}"`, 5_000) } catch { /* ignore */ }
+    installLog('Instalação automática falhou. Abrindo página de download...', 'error')
+    const url = 'https://docs.docker.com/desktop/setup/install/windows-install/'
+    shell.openExternal(url)
+    return { status: 'opened_browser', url }
+  }
+}
+
+async function installDockerMac(): Promise<DockerInstallResult> {
+  const isArm = process.arch === 'arm64'
+
+  // 1. Try Homebrew
+  installLog(`Arquitetura: ${isArm ? 'Apple Silicon (ARM64)' : 'Intel (x86_64)'}`, 'step')
+  installLog('Verificando Homebrew...', 'step')
+  try {
+    await spawnWithLogs('brew', ['install', '--cask', 'docker'], 'brew install --cask docker', 600_000)
+    installLog('Iniciando Docker Desktop...', 'step')
+    try { await execQuiet('open -a Docker') } catch { /* ignore */ }
+    installLog('Docker Desktop instalado via Homebrew!', 'success')
+    return { status: 'success' }
+  } catch {
+    installLog('Homebrew não disponível, tentando download direto...', 'output')
+  }
+
+  // 2. Direct DMG download
+  const dmgUrl = isArm
+    ? 'https://desktop.docker.com/mac/main/arm64/Docker.dmg'
+    : 'https://desktop.docker.com/mac/main/amd64/Docker.dmg'
+  const dmgPath = '/tmp/Docker.dmg'
+
+  try {
+    installLog(`Baixando Docker Desktop (${isArm ? 'ARM64' : 'AMD64'})...`, 'step')
+    await spawnWithLogs('curl', ['-fSL', '--progress-bar', '-o', dmgPath, dmgUrl], `curl → ${dmgPath}`, 600_000)
+
+    installLog('Montando DMG...', 'step')
+    await spawnWithLogs('hdiutil', ['attach', dmgPath, '-nobrowse', '-quiet'], 'hdiutil attach', 60_000)
+
+    installLog('Copiando Docker.app para /Applications...', 'step')
+    await spawnWithLogs('cp', ['-R', '/Volumes/Docker/Docker.app', '/Applications/'], 'cp Docker.app', 120_000)
+
+    installLog('Desmontando DMG...', 'step')
+    await spawnWithLogs('hdiutil', ['detach', '/Volumes/Docker', '-quiet'], 'hdiutil detach', 30_000)
+    try { await execQuiet(`rm -f "${dmgPath}"`) } catch { /* ignore */ }
+
+    installLog('Iniciando Docker Desktop...', 'step')
+    try { await execQuiet('open -a Docker') } catch { /* ignore */ }
+
+    installLog('Docker Desktop instalado com sucesso!', 'success')
+    return { status: 'success' }
+  } catch {
+    installLog('Instalação automática falhou. Abrindo página de download...', 'error')
+    const url = 'https://docs.docker.com/desktop/setup/install/mac-install/'
+    shell.openExternal(url)
+    return { status: 'opened_browser', url }
+  }
+}
+
+async function installDockerLinux(): Promise<DockerInstallResult> {
+  const user = process.env.USER ?? process.env.LOGNAME ?? ''
+
+  // 1. Try official convenience script
+  installLog('Tentando script oficial get.docker.com...', 'step')
+  try {
+    await spawnWithLogs('sh', ['-c', 'curl -fsSL https://get.docker.com | sh'], 'curl get.docker.com | sh', 600_000)
+
+    if (user) {
+      installLog(`Adicionando ${user} ao grupo docker...`, 'step')
+      try { await spawnWithLogs('sudo', ['usermod', '-aG', 'docker', user], `usermod -aG docker ${user}`) } catch { /* ignore */ }
+    }
+    installLog('Habilitando serviço Docker...', 'step')
+    try { await spawnWithLogs('sudo', ['systemctl', 'enable', '--now', 'docker'], 'systemctl enable --now docker') } catch { /* ignore */ }
+
+    installLog('Docker instalado com sucesso!', 'success')
+    return { status: 'success' }
+  } catch {
+    installLog('Script oficial falhou, tentando gerenciador de pacotes...', 'output')
+  }
+
+  // 2. Try package managers
+  const managers: { check: string; install: string; label: string }[] = [
+    {
+      check: 'which apt-get',
+      install: 'sudo apt-get update && sudo apt-get install -y docker.io docker-compose-plugin',
+      label: 'apt-get'
+    },
+    {
+      check: 'which dnf',
+      install: 'sudo dnf install -y docker docker-compose-plugin',
+      label: 'dnf'
+    },
+    {
+      check: 'which pacman',
+      install: 'sudo pacman -S --noconfirm docker docker-compose',
+      label: 'pacman'
+    }
+  ]
+
+  for (const pm of managers) {
+    try {
+      await execQuiet(pm.check)
+      installLog(`Detectado ${pm.label}, instalando Docker...`, 'step')
+      await spawnWithLogs('sh', ['-c', pm.install], pm.install, 600_000)
+
+      if (user) {
+        try { await spawnWithLogs('sudo', ['usermod', '-aG', 'docker', user], `usermod -aG docker ${user}`) } catch { /* ignore */ }
+      }
+      try { await spawnWithLogs('sudo', ['systemctl', 'enable', '--now', 'docker'], 'systemctl enable --now docker') } catch { /* ignore */ }
+
+      installLog('Docker instalado com sucesso!', 'success')
+      return { status: 'success' }
+    } catch { /* try next */ }
+  }
+
+  // 3. Fallback
+  installLog('Nenhum método automático funcionou. Abrindo documentação...', 'error')
+  const url = 'https://docs.docker.com/engine/install/'
+  shell.openExternal(url)
+  return { status: 'opened_browser', url }
+}
+
 export async function installDocker(): Promise<DockerInstallResult> {
   const platform = process.platform
+  const osLabel = platform === 'win32' ? 'Windows' : platform === 'darwin' ? 'macOS' : 'Linux'
+  installLog(`Iniciando instalação do Docker para ${osLabel}...`, 'step')
 
-  if (platform === 'linux') {
-    // Try the official convenience script — runs fully automatically
-    return new Promise((resolve) => {
-      exec(
-        'curl -fsSL https://get.docker.com | sh',
-        { timeout: 300_000 },
-        (err) => {
-          if (err) {
-            // Fallback: open browser
-            shell.openExternal('https://docs.docker.com/engine/install/')
-            resolve({ status: 'opened_browser', url: 'https://docs.docker.com/engine/install/' })
-          } else {
-            resolve({ status: 'success' })
-          }
-        }
-      )
-    })
-  }
-
-  if (platform === 'win32') {
-    // Try winget first (available on Windows 10 1809+)
-    return new Promise((resolve) => {
-      exec(
-        'winget install --id Docker.DockerDesktop --silent --accept-source-agreements --accept-package-agreements',
-        { timeout: 300_000 },
-        (err) => {
-          if (err) {
-            const url = 'https://desktop.docker.com/win/main/amd64/Docker%20Desktop%20Installer.exe'
-            shell.openExternal(url)
-            resolve({ status: 'opened_browser', url })
-          } else {
-            resolve({ status: 'success' })
-          }
-        }
-      )
-    })
-  }
-
-  if (platform === 'darwin') {
-    // Try Homebrew first
-    return new Promise((resolve) => {
-      exec(
-        'brew install --cask docker',
-        { timeout: 300_000 },
-        (err) => {
-          if (err) {
-            const url = 'https://desktop.docker.com/mac/main/amd64/Docker.dmg'
-            shell.openExternal(url)
-            resolve({ status: 'opened_browser', url })
-          } else {
-            resolve({ status: 'success' })
-          }
-        }
-      )
-    })
-  }
+  if (platform === 'win32') return installDockerWindows()
+  if (platform === 'darwin') return installDockerMac()
+  if (platform === 'linux') return installDockerLinux()
 
   const url = 'https://docs.docker.com/get-docker/'
   shell.openExternal(url)

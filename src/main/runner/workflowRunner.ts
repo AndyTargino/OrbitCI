@@ -15,12 +15,27 @@ import { getCurrentSha, getCurrentBranch } from '../git/gitEngine'
 import { IPC_CHANNELS, WORKFLOWS_DIR, DEFAULT_MAX_CONCURRENT } from '@shared/constants'
 import type { WorkflowDefinition, JobDefinition, RunStatus } from '@shared/types'
 
-interface TriggerEvent {
+export interface TriggerEvent {
   branch?: string
   sha?: string
   localPath?: string
   inputs?: Record<string, string>
   eventName?: string
+  release?: {
+    tag_name: string
+    name: string
+    body?: string
+    draft: boolean
+    prerelease: boolean
+    html_url?: string
+    id?: number
+  }
+}
+
+// Singleton runner instance (for actions that need to fire events)
+let runnerInstance: WorkflowRunner | null = null
+export function getRunnerInstance(): WorkflowRunner | null {
+  return runnerInstance
 }
 
 // Map of runId → cancel flag
@@ -39,6 +54,10 @@ export class WorkflowRunner {
   private queue: QueueItem[] = []
   private activeRuns = new Set<string>()
   private draining = false
+
+  constructor() {
+    runnerInstance = this
+  }
 
   /** Mark stale pending/running runs from previous sessions as cancelled */
   async cleanupStaleRuns(): Promise<void> {
@@ -240,9 +259,13 @@ export class WorkflowRunner {
       GITHUB_REPOSITORY_OWNER: owner,
       GITHUB_REPOSITORY_ID: '0',
       GITHUB_SHA: sha,
-      GITHUB_REF: `refs/heads/${branch}`,
-      GITHUB_REF_NAME: branch,
-      GITHUB_REF_TYPE: 'branch',
+      GITHUB_REF: trigger === 'release' && event.release
+        ? `refs/tags/${event.release.tag_name}`
+        : `refs/heads/${branch}`,
+      GITHUB_REF_NAME: trigger === 'release' && event.release
+        ? event.release.tag_name
+        : branch,
+      GITHUB_REF_TYPE: trigger === 'release' ? 'tag' : 'branch',
       GITHUB_HEAD_REF: branch,
       GITHUB_BASE_REF: branch,
       GITHUB_ACTOR: owner,
@@ -277,12 +300,29 @@ export class WorkflowRunner {
     const ctx: ExpressionContext = {
       github: {
         sha,
-        ref: `refs/heads/${branch}`,
-        ref_name: branch,
+        ref: trigger === 'release' && event.release
+          ? `refs/tags/${event.release.tag_name}`
+          : `refs/heads/${branch}`,
+        ref_name: trigger === 'release' && event.release
+          ? event.release.tag_name
+          : branch,
         repository: repoId,
         actor: owner,
         event_name: trigger,
-        workspace
+        workspace,
+        ...(event.release ? {
+          event: {
+            release: {
+              tag_name: event.release.tag_name,
+              name: event.release.name,
+              body: event.release.body ?? '',
+              draft: String(event.release.draft),
+              prerelease: String(event.release.prerelease),
+              html_url: event.release.html_url ?? '',
+              id: String(event.release.id ?? '')
+            }
+          }
+        } : {})
       },
       inputs: event.inputs ?? {},
       env: { ...baseEnv },
@@ -420,8 +460,16 @@ export class WorkflowRunner {
       return Array.isArray(on['schedule']) && (on['schedule'] as unknown[]).length > 0
     }
 
-    if (on[eventName] !== undefined) return true
+    // Release trigger: on.release with optional types filter
+    if (eventName === 'release' && on['release']) {
+      const releaseTrigger = on['release'] as { types?: string[] }
+      if (releaseTrigger.types) {
+        return releaseTrigger.types.includes('published')
+      }
+      return true
+    }
 
+    // Push trigger with branch filtering
     if (eventName === 'push' && on['push']) {
       const pushTrigger = on['push'] as { branches?: string[] }
       if (pushTrigger.branches && event.branch) {
@@ -431,6 +479,9 @@ export class WorkflowRunner {
       }
       return true
     }
+
+    if (on[eventName] !== undefined) return true
+
     return false
   }
 }

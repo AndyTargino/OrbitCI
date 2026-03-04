@@ -11,6 +11,7 @@ export interface ActionContext {
   with: Record<string, string> | undefined
   log: (msg: string) => void
   setOutput: (key: string, value: string) => void
+  repoId?: string
 }
 
 export type ActionHandler = (ctx: ActionContext) => Promise<Record<string, string> | void>

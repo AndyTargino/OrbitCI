@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Settings as SettingsIcon, LogOut, Container, Bell, RefreshCw, Save, Loader2, Github, Download, ArrowDownToLine } from 'lucide-react'
+import { Settings as SettingsIcon, LogOut, Container, Bell, RefreshCw, Save, Loader2, Github, Download, ArrowDownToLine, Terminal, CheckCircle2, XCircle } from 'lucide-react'
 import { electron } from '@/lib/electron'
 import { useAuthStore, useSettingsStore, useDockerStore, useUpdaterStore } from '@/store'
+import { IPC_CHANNELS } from '@shared/constants'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -17,11 +18,10 @@ export function Settings(): JSX.Element {
   const navigate = useNavigate()
   const { user, setUser } = useAuthStore()
   const { settings, setSettings } = useSettingsStore()
-  const { status: dockerStatus, setStatus } = useDockerStore()
+  const { status: dockerStatus, setStatus, installing: isInstallingDocker, setInstalling, installLogs, addInstallLog, clearInstallLogs } = useDockerStore()
   const [isSaving, setIsSaving] = useState(false)
   const [isCheckingDocker, setIsCheckingDocker] = useState(false)
-  const [isInstallingDocker, setIsInstallingDocker] = useState(false)
-  const [imageMenuOpen, setImageMenuOpen] = useState(false)
+  const installLogRef = useRef<HTMLDivElement>(null)
   const [form, setForm] = useState({
     githubClientId: '',
     githubClientSecret: '',
@@ -82,26 +82,47 @@ export function Settings(): JSX.Element {
   }
 
   const handleInstallDocker = async () => {
-    setIsInstallingDocker(true)
+    if (isInstallingDocker) return
+    setInstalling(true)
+    clearInstallLogs()
+
+    // Subscribe to install progress events
+    const unsub = electron.on(IPC_CHANNELS.EVENT_DOCKER_INSTALL, (data: unknown) => {
+      const { message, type } = data as { message: string; type: string }
+      addInstallLog({ message, type })
+      // Auto-scroll
+      setTimeout(() => {
+        installLogRef.current?.scrollTo({ top: installLogRef.current.scrollHeight })
+      }, 50)
+    })
+
     try {
       const result = await electron.docker.install()
       if (result.status === 'success') {
-        notify('success', 'Docker instalado!', 'Verificando disponibilidade...')
-        // Auto-refresh docker status after successful install
         const status = await electron.docker.status()
         setStatus(status)
         if (!status.available) {
-          notify('warning', 'Docker instalado', 'Pode ser necessário reiniciar o computador para ativar o Docker.')
+          addInstallLog({ message: 'Docker instalado, mas pode ser necessário reiniciar o computador ou iniciar o Docker Desktop.', type: 'error' })
         }
       } else if (result.status === 'opened_browser') {
-        notify('info', 'Instalador aberto', 'Siga as instruções no navegador e depois clique em Verificar.')
+        addInstallLog({ message: 'Instalador aberto no navegador. Após instalar, clique em "Verificar".', type: 'step' })
       }
     } catch {
-      notify('failure', 'Erro ao instalar Docker', 'Não foi possível iniciar a instalação.')
+      addInstallLog({ message: 'Erro inesperado durante a instalação.', type: 'error' })
     } finally {
-      setIsInstallingDocker(false)
+      unsub()
+      setInstalling(false)
     }
   }
+
+  // Auto-scroll when logs update from another source (e.g. sidebar triggered install)
+  useEffect(() => {
+    if (installLogs.length > 0) {
+      setTimeout(() => {
+        installLogRef.current?.scrollTo({ top: installLogRef.current.scrollHeight })
+      }, 50)
+    }
+  }, [installLogs.length])
 
   return (
     <div className="p-6 max-w-2xl mx-auto space-y-6">
@@ -254,28 +275,68 @@ export function Settings(): JSX.Element {
 
           {/* Not available — install prompt */}
           {!dockerStatus?.available && (
-            <div className="rounded-md border border-[#d29922]/30 bg-[#d29922]/5 p-3 space-y-2">
-              <p className="text-[13px] font-medium text-[#d29922]">Docker não encontrado</p>
-              <p className="text-[12px] text-muted-foreground">
-                O Docker Desktop é necessário para executar containers. Instale automaticamente
-                ou baixe o instalador oficial.
-              </p>
-              <div className="flex gap-2 flex-wrap">
-                <Button size="sm" className="h-7 text-[12px]" onClick={handleInstallDocker} disabled={isInstallingDocker}>
-                  {isInstallingDocker
-                    ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    : <Download className="h-3.5 w-3.5" />
-                  }
-                  {isInstallingDocker ? 'Instalando...' : 'Instalar Docker'}
-                </Button>
-                <Button size="sm" variant="outline" className="h-7 text-[12px]" onClick={handleCheckDocker} disabled={isCheckingDocker}>
-                  {isCheckingDocker ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-                  Verificar
-                </Button>
+            <div className="space-y-3">
+              <div className="rounded-md border border-[#d29922]/30 bg-[#d29922]/5 p-3 space-y-2">
+                <p className="text-[13px] font-medium text-[#d29922]">Docker não encontrado</p>
+                <p className="text-[12px] text-muted-foreground">
+                  O Docker é necessário para executar containers. A instalação é automática — basta clicar no botão abaixo.
+                </p>
+                <div className="flex gap-2 flex-wrap">
+                  <Button size="sm" className="h-7 text-[12px]" onClick={handleInstallDocker} disabled={isInstallingDocker}>
+                    {isInstallingDocker
+                      ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Instalando...</>
+                      : <><Download className="h-3.5 w-3.5" /> Instalar Docker</>
+                    }
+                  </Button>
+                  <Button size="sm" variant="outline" className="h-7 text-[12px]" onClick={handleCheckDocker} disabled={isCheckingDocker}>
+                    {isCheckingDocker ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+                    Verificar
+                  </Button>
+                </div>
+                <p className="text-[11px] text-muted-foreground/60">
+                  Windows: winget → download direto · macOS: Homebrew → DMG · Linux: get.docker.com → apt/dnf/pacman
+                </p>
               </div>
-              <p className="text-[11px] text-muted-foreground/60">
-                Windows: winget · macOS: Homebrew · Linux: script oficial
-              </p>
+
+              {/* Live install terminal */}
+              {installLogs.length > 0 && (
+                <div className="rounded-md border border-border bg-[#0d1117] overflow-hidden">
+                  <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border/50 bg-[#161b22]">
+                    <Terminal className="h-3.5 w-3.5 text-muted-foreground" />
+                    <span className="text-[11px] font-medium text-muted-foreground">Instalação do Docker</span>
+                    {isInstallingDocker && <Loader2 className="h-3 w-3 animate-spin text-[#58a6ff] ml-auto" />}
+                    {!isInstallingDocker && installLogs.some((l) => l.type === 'success') && (
+                      <CheckCircle2 className="h-3.5 w-3.5 text-[#3fb950] ml-auto" />
+                    )}
+                    {!isInstallingDocker && installLogs.some((l) => l.type === 'error') && !installLogs.some((l) => l.type === 'success') && (
+                      <XCircle className="h-3.5 w-3.5 text-[#f85149] ml-auto" />
+                    )}
+                  </div>
+                  <div
+                    ref={installLogRef}
+                    className="p-3 max-h-[280px] overflow-y-auto font-mono text-[11px] leading-[1.6] space-y-0.5 scrollbar-thin"
+                  >
+                    {installLogs.map((log, i) => (
+                      <div
+                        key={i}
+                        className={cn(
+                          log.type === 'step' && 'text-[#58a6ff] font-semibold mt-1',
+                          log.type === 'success' && 'text-[#3fb950] font-semibold mt-1',
+                          log.type === 'error' && 'text-[#f85149]',
+                          log.type === 'output' && 'text-[#8b949e]'
+                        )}
+                      >
+                        {log.type === 'success' && '✓ '}
+                        {log.type === 'error' && '✗ '}
+                        {log.message}
+                      </div>
+                    ))}
+                    {isInstallingDocker && (
+                      <div className="text-[#8b949e] animate-pulse">▌</div>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

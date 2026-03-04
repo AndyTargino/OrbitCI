@@ -13,6 +13,7 @@ export interface Repo {
   notifications: boolean
   lastSyncAt: string | null
   lastRemoteSha: string | null
+  lastReleaseTag: string | null
   gitUserName: string | null
   gitUserEmail: string | null
   createdAt: string

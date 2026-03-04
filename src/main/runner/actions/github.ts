@@ -1,10 +1,11 @@
 import type { ActionHandler } from './index'
 import * as githubService from '../../services/githubService'
+import { getRunnerInstance } from '../workflowRunner'
 import { readFileSync } from 'fs'
 import { join } from 'path'
 
 export const githubActions: Record<string, ActionHandler> = {
-  'github/create-release': async ({ with: w, workspace, log, setOutput }) => {
+  'github/create-release': async ({ with: w, workspace, env, log, setOutput, repoId }) => {
     if (!w?.['tag-name']) throw new Error('github/create-release: "tag-name" é obrigatório')
 
     const [owner, repo] = (w['repo'] ?? process.env['GITHUB_REPOSITORY'] ?? '/').split('/')
@@ -17,17 +18,44 @@ export const githubActions: Record<string, ActionHandler> = {
       }
     }
 
+    const isDraft = w?.draft === 'true'
+    const isPrerelease = w?.prerelease === 'true'
+
     const release = await githubService.createRelease(owner, repo, {
       tagName: w['tag-name'],
       name: w?.name ?? w['tag-name'],
       body,
-      draft: w?.draft === 'true',
-      prerelease: w?.prerelease === 'true'
+      draft: isDraft,
+      prerelease: isPrerelease
     })
 
     log(`✓ Release publicada: ${release.htmlUrl}`)
     setOutput('release-id', String(release.id))
     setOutput('html-url', release.htmlUrl)
+
+    // Fire release event to trigger dependent workflows (e.g. build-*.yml)
+    if (!isDraft && repoId) {
+      const runner = getRunnerInstance()
+      if (runner) {
+        const branch = env?.GITHUB_REF_NAME ?? env?.GITHUB_HEAD_REF ?? 'main'
+        const sha = env?.GITHUB_SHA ?? ''
+        await runner.triggerEvent(repoId, 'release', {
+          branch,
+          sha,
+          release: {
+            tag_name: w['tag-name'],
+            name: w?.name ?? w['tag-name'],
+            body,
+            draft: isDraft,
+            prerelease: isPrerelease,
+            html_url: release.htmlUrl,
+            id: release.id
+          }
+        })
+        log(`✓ Evento release disparado para workflows dependentes`)
+      }
+    }
+
     return { 'release-id': String(release.id), 'html-url': release.htmlUrl }
   },
 

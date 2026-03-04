@@ -108,6 +108,7 @@ export const IPC_CHANNELS = {
   EVENT_RUN_STATUS: 'event:runStatus',
   EVENT_SYNC: 'event:sync',
   EVENT_DOCKER_LOG: 'event:dockerLog',
+  EVENT_DOCKER_INSTALL: 'event:dockerInstall',
   EVENT_OAUTH_CALLBACK: 'event:oauth:callback',
   EVENT_UPDATER: 'event:updater'
 } as const

@@ -4,11 +4,11 @@ import {
   History, Shield, Plus, BarChart2,
   CheckCircle2, XCircle, Loader2, AlertCircle, LayoutDashboard, RefreshCw,
   LogOut, ChevronDown, UserCircle2, Settings, ArrowUp, ArrowDown, GitBranch,
-  Download, RotateCcw
+  Download, RotateCcw, Container
 } from 'lucide-react'
 import orbitIcon from '@/assets/icon.png'
 import { cn } from '@/lib/utils'
-import { useRepoStore, useRunsStore, useAuthStore, useUpdaterStore } from '@/store'
+import { useRepoStore, useRunsStore, useAuthStore, useUpdaterStore, useDockerStore } from '@/store'
 import type { GitSummary } from '@/store'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -58,6 +58,13 @@ export function Sidebar(): JSX.Element {
   const { runs } = useRunsStore()
   const { user, setUser } = useAuthStore()
   const updater = useUpdaterStore()
+  const dockerStatus = useDockerStore((s) => s.status)
+  const setDockerStatus = useDockerStore((s) => s.setStatus)
+  const dockerInstalling = useDockerStore((s) => s.installing)
+  const setDockerInstalling = useDockerStore((s) => s.setInstalling)
+  const addDockerInstallLog = useDockerStore((s) => s.addInstallLog)
+  const clearDockerInstallLogs = useDockerStore((s) => s.clearInstallLogs)
+  const dockerInstallLogs = useDockerStore((s) => s.installLogs)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   // Subscribe to updater events from main process
@@ -83,6 +90,14 @@ export function Sidebar(): JSX.Element {
   const handleInstallUpdate = () => {
     electron.updater.install()
   }
+
+  // Periodically re-check Docker availability
+  useEffect(() => {
+    const check = () => electron.docker.status().then(setDockerStatus).catch(() => {})
+    const timer = setInterval(check, 60_000)
+    return () => clearInterval(timer)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // Fetch git summary for all repos that have a local path
   const fetchSummaries = async () => {
@@ -136,6 +151,38 @@ export function Sidebar(): JSX.Element {
     await electron.auth.logout()
     setUser(null)
     navigate('/login')
+  }
+
+  const handleSidebarDockerInstall = async () => {
+    // Navigate to settings so user can see the terminal
+    navigate('/settings')
+
+    if (dockerInstalling) return
+    setDockerInstalling(true)
+    clearDockerInstallLogs()
+
+    const unsub = electron.on(IPC_CHANNELS.EVENT_DOCKER_INSTALL, (data: unknown) => {
+      const { message, type } = data as { message: string; type: string }
+      addDockerInstallLog({ message, type })
+    })
+
+    try {
+      const result = await electron.docker.install()
+      if (result.status === 'success') {
+        const status = await electron.docker.status()
+        setDockerStatus(status)
+        if (!status.available) {
+          addDockerInstallLog({ message: 'Docker instalado, mas pode ser necessário reiniciar o computador ou iniciar o Docker Desktop.', type: 'error' })
+        }
+      } else if (result.status === 'opened_browser') {
+        addDockerInstallLog({ message: 'Instalador aberto no navegador. Após instalar, clique em "Verificar".', type: 'step' })
+      }
+    } catch {
+      addDockerInstallLog({ message: 'Erro inesperado durante a instalação.', type: 'error' })
+    } finally {
+      unsub()
+      setDockerInstalling(false)
+    }
   }
 
   const navItems = [
@@ -302,6 +349,45 @@ export function Sidebar(): JSX.Element {
           )}
         </div>
       </ScrollArea>
+
+      {/* ── Docker warning ────────────────────────────────────────────────── */}
+      {dockerStatus && !dockerStatus.available && (
+        <div className="border-t border-sidebar-border px-3 py-2">
+          {dockerInstalling ? (
+            <button
+              onClick={() => navigate('/settings')}
+              className="no-drag flex w-full items-start gap-2 rounded-[5px] px-2 py-2 bg-[#58a6ff]/8 hover:bg-[#58a6ff]/12 transition-colors text-left"
+            >
+              <Loader2 className="h-4 w-4 text-[#58a6ff] shrink-0 mt-0.5 animate-spin" />
+              <div className="min-w-0 flex-1">
+                <p className="text-[11px] font-medium text-[#58a6ff] leading-tight">
+                  Instalando Docker...
+                </p>
+                <p className="text-[10px] text-sidebar-foreground/45 leading-snug mt-0.5 truncate">
+                  {dockerInstallLogs.length > 0
+                    ? dockerInstallLogs[dockerInstallLogs.length - 1].message
+                    : 'Aguardando...'}
+                </p>
+              </div>
+            </button>
+          ) : (
+            <button
+              onClick={handleSidebarDockerInstall}
+              className="no-drag flex w-full items-start gap-2 rounded-[5px] px-2 py-2 bg-[#d29922]/8 hover:bg-[#d29922]/12 transition-colors text-left"
+            >
+              <Container className="h-4 w-4 text-[#d29922] shrink-0 mt-0.5" />
+              <div className="min-w-0 flex-1">
+                <p className="text-[11px] font-medium text-[#d29922] leading-tight">
+                  Docker não detectado
+                </p>
+                <p className="text-[10px] text-sidebar-foreground/45 leading-snug mt-0.5">
+                  Clique para instalar Docker
+                </p>
+              </div>
+            </button>
+          )}
+        </div>
+      )}
 
       {/* ── Updater widget ────────────────────────────────────────────────── */}
       {updater.status !== 'idle' && updater.status !== 'not-available' && (

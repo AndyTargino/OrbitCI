@@ -24,6 +24,7 @@ export interface StepRunnerOpts {
   stepId?: string
   runId?: string
   jobName?: string
+  repoId?: string
 }
 
 export interface StepResult {
@@ -35,7 +36,7 @@ export interface StepResult {
 }
 
 export async function runStep(opts: StepRunnerOpts): Promise<StepResult> {
-  const { step, stepIndex, workspace, env, ctx, log, setOutput, containerId, monitor, stepId, runId, jobName } = opts
+  const { step, stepIndex, workspace, env, ctx, log, setOutput, containerId, monitor, stepId, runId, jobName, repoId } = opts
   const start = Date.now()
   const outputs: Record<string, string> = {}
 
@@ -103,7 +104,8 @@ export async function runStep(opts: StepRunnerOpts): Promise<StepResult> {
         env,
         with: resolvedWith,
         log: (msg) => stepLog(msg),
-        setOutput: stepSetOutput
+        setOutput: stepSetOutput,
+        repoId
       }
 
       const result = await action(actionCtx)

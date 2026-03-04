@@ -9,6 +9,7 @@ import { up as up007, name as name007 } from './migrations/007_create_settings'
 import { up as up008, name as name008 } from './migrations/008_create_run_metrics'
 import { up as up009, name as name009 } from './migrations/009_add_step_metrics'
 import { up as up010, name as name010 } from './migrations/010_add_run_metrics'
+import { up as up011, name as name011 } from './migrations/011_add_last_release_tag'
 
 // ─── Migration registry (ordered) ────────────────────────────────────────────
 interface Migration {
@@ -26,7 +27,8 @@ const MIGRATIONS: Migration[] = [
   { name: name007, up: up007 },
   { name: name008, up: up008 },
   { name: name009, up: up009 },
-  { name: name010, up: up010 }
+  { name: name010, up: up010 },
+  { name: name011, up: up011 }
 ]
 
 // ─── Migration runner ─────────────────────────────────────────────────────────

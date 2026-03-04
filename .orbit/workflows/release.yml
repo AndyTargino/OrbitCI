@@ -4,25 +4,9 @@ on:
   push:
     branches: [main]
 
-permissions:
-  contents: write
-
 jobs:
   release:
-    runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-
       - name: Determine version bump
         id: bump
         run: |
@@ -58,24 +42,18 @@ jobs:
           echo "────────────────────────────────"
 
           # Analyze commits for version bump level
-          # Priority: major > minor > patch
           BUMP="patch"
 
           while IFS= read -r msg; do
-            # BREAKING CHANGE → major
             if echo "$msg" | grep -qiE '^[a-z]+(\(.+\))?!:|BREAKING[ _-]CHANGE'; then
               BUMP="major"
               break
             fi
-
-            # feat → minor
             if echo "$msg" | grep -qiE '^feat(\(.+\))?:'; then
               if [ "$BUMP" != "major" ]; then
                 BUMP="minor"
               fi
             fi
-
-            # fix, refactor, perf, etc → patch (already default)
           done <<< "$COMMITS"
 
           # Apply bump
@@ -119,14 +97,12 @@ jobs:
           VERSION="${{ steps.bump.outputs.version }}"
           BUMP="${{ steps.bump.outputs.bump }}"
 
-          # Collect commits grouped by type
           if [ -z "$PREV_TAG" ]; then
             COMMITS=$(git log --pretty=format:"%s|||%h" --no-merges)
           else
             COMMITS=$(git log "${PREV_TAG}..HEAD" --pretty=format:"%s|||%h" --no-merges)
           fi
 
-          # Build release notes
           BREAKING=""
           FEATURES=""
           FIXES=""
@@ -137,7 +113,6 @@ jobs:
             MSG=$(echo "$line" | cut -d'|' -f1)
             HASH=$(echo "$line" | rev | cut -d'|' -f1 | rev)
 
-            # Categorize
             if echo "$MSG" | grep -qiE '^[a-z]+(\(.+\))?!:|BREAKING[ _-]CHANGE'; then
               CLEAN=$(echo "$MSG" | sed -E 's/^[a-z]+(\([^)]*\))?!?:\s*//')
               BREAKING="${BREAKING}\n- ${CLEAN} (\`${HASH}\`)"
@@ -155,13 +130,8 @@ jobs:
             fi
           done <<< "$COMMITS"
 
-          # Assemble body
           {
             echo "BODY<<RELEASE_EOF"
-
-            BUMP_LABEL="patch"
-            [ "$BUMP" = "minor" ] && BUMP_LABEL="minor"
-            [ "$BUMP" = "major" ] && BUMP_LABEL="major"
 
             if [ -n "$BREAKING" ]; then
               echo "### Breaking Changes"
@@ -201,16 +171,15 @@ jobs:
             echo "RELEASE_EOF"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Update package.json and package-lock.json version
+      - name: Update package.json version
         if: steps.bump.outputs.skip != 'true'
-        run: |
-          npm version "${{ steps.bump.outputs.version }}" --no-git-tag-version --allow-same-version
+        run: npm version "${{ steps.bump.outputs.version }}" --no-git-tag-version --allow-same-version
 
       - name: Commit version bump
         if: steps.bump.outputs.skip != 'true'
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "OrbitCI[bot]"
+          git config user.email "orbitci[bot]@users.noreply.github.com"
           git add package.json package-lock.json
           git commit -m "release: v${{ steps.bump.outputs.version }}"
           git push
@@ -223,12 +192,9 @@ jobs:
 
       - name: Create GitHub Release
         if: steps.bump.outputs.skip != 'true'
-        uses: softprops/action-gh-release@v2
+        OrbitCI: github/create-release
         with:
-          tag_name: ${{ steps.bump.outputs.tag }}
+          tag-name: ${{ steps.bump.outputs.tag }}
           name: OrbitCI ${{ steps.bump.outputs.tag }}
           body: ${{ steps.notes.outputs.BODY }}
-          draft: false
-          prerelease: false
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          repo: ${{ github.repository }}

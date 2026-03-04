@@ -140,14 +140,29 @@ export const useSettingsStore = create<SettingsState>((set) => ({
 }))
 
 // ─── Docker Store ─────────────────────────────────────────────────────────────
+export interface DockerInstallLog {
+  message: string
+  type: string
+}
+
 interface DockerState {
   status: DockerStatus | null
+  installing: boolean
+  installLogs: DockerInstallLog[]
   setStatus: (status: DockerStatus) => void
+  setInstalling: (installing: boolean) => void
+  addInstallLog: (log: DockerInstallLog) => void
+  clearInstallLogs: () => void
 }
 
 export const useDockerStore = create<DockerState>((set) => ({
   status: null,
-  setStatus: (status) => set({ status })
+  installing: false,
+  installLogs: [],
+  setStatus: (status) => set({ status }),
+  setInstalling: (installing) => set({ installing }),
+  addInstallLog: (log) => set((s) => ({ installLogs: [...s.installLogs, log] })),
+  clearInstallLogs: () => set({ installLogs: [] })
 }))
 
 // ─── Updater Store ───────────────────────────────────────────────────────────

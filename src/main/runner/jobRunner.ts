@@ -148,7 +148,8 @@ export async function runJob(opts: JobRunnerOpts): Promise<JobResult> {
         monitor,
         stepId,
         runId,
-        jobName
+        jobName,
+        repoId
       })
 
       // Stop monitor and save metrics for this step

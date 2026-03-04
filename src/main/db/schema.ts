@@ -16,6 +16,7 @@ export const repos = sqliteTable('repos', {
   notifications: integer('notifications').default(1), // boolean
   lastSyncAt: text('last_sync_at'),
   lastRemoteSha: text('last_remote_sha'),
+  lastReleaseTag: text('last_release_tag'),
   gitUserName: text('git_user_name'),
   gitUserEmail: text('git_user_email'),
   createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`)

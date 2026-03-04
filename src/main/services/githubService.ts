@@ -91,6 +91,35 @@ export async function getLatestCommitSha(
   }
 }
 
+export async function getLatestRelease(
+  owner: string,
+  repo: string
+): Promise<{
+  tag_name: string
+  name: string
+  body: string
+  draft: boolean
+  prerelease: boolean
+  html_url: string
+  id: number
+} | null> {
+  try {
+    const kit = getOctokit()
+    const { data } = await kit.repos.getLatestRelease({ owner, repo })
+    return {
+      tag_name: data.tag_name,
+      name: data.name ?? data.tag_name,
+      body: data.body ?? '',
+      draft: data.draft,
+      prerelease: data.prerelease,
+      html_url: data.html_url,
+      id: data.id
+    }
+  } catch {
+    return null
+  }
+}
+
 export async function createRelease(
   owner: string,
   repo: string,
