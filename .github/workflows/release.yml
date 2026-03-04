@@ -1,4 +1,4 @@
-name: Auto Release
+name: Auto Release + Build
 
 on:
   push:
@@ -10,6 +10,10 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
+
+    outputs:
+      skip: ${{ steps.check_commit.outputs.skip == 'true' || steps.bump.outputs.skip == 'true' }}
+      tag: ${{ steps.bump.outputs.tag }}
 
     steps:
       - name: Checkout
@@ -51,7 +55,6 @@ jobs:
         if: steps.check_commit.outputs.skip != 'true'
         id: bump
         run: |
-          # Get the latest tag (semver only)
           LATEST_TAG=$(git tag -l 'v*' --sort=-v:refname | head -n1)
 
           if [ -z "$LATEST_TAG" ]; then
@@ -62,10 +65,8 @@ jobs:
             echo "Latest tag: $LATEST_TAG (version: $CURRENT_VERSION)"
           fi
 
-          # Parse current version
           IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT_VERSION"
 
-          # Get commits since last tag (or all commits if no tag)
           if [ -z "$LATEST_TAG" ]; then
             COMMITS=$(git log --pretty=format:"%s" --no-merges)
           else
@@ -82,47 +83,26 @@ jobs:
           echo "$COMMITS"
           echo "────────────────────────────────"
 
-          # Analyze commits for version bump level
-          # Priority: major > minor > patch
           BUMP="patch"
-
           while IFS= read -r msg; do
-            # BREAKING CHANGE → major
             if echo "$msg" | grep -qiE '^[a-z]+(\(.+\))?!:|BREAKING[ _-]CHANGE'; then
               BUMP="major"
               break
             fi
-
-            # feat → minor
             if echo "$msg" | grep -qiE '^feat(\(.+\))?:'; then
-              if [ "$BUMP" != "major" ]; then
-                BUMP="minor"
-              fi
+              if [ "$BUMP" != "major" ]; then BUMP="minor"; fi
             fi
-
-            # fix, refactor, perf, etc → patch (already default)
           done <<< "$COMMITS"
 
-          # Apply bump
           case "$BUMP" in
-            major)
-              MAJOR=$((MAJOR + 1))
-              MINOR=0
-              PATCH=0
-              ;;
-            minor)
-              MINOR=$((MINOR + 1))
-              PATCH=0
-              ;;
-            patch)
-              PATCH=$((PATCH + 1))
-              ;;
+            major) MAJOR=$((MAJOR + 1)); MINOR=0; PATCH=0 ;;
+            minor) MINOR=$((MINOR + 1)); PATCH=0 ;;
+            patch) PATCH=$((PATCH + 1)) ;;
           esac
 
           NEW_VERSION="${MAJOR}.${MINOR}.${PATCH}"
           NEW_TAG="v${NEW_VERSION}"
 
-          # Check if tag already exists
           if git rev-parse "$NEW_TAG" >/dev/null 2>&1; then
             echo "Tag $NEW_TAG already exists. Skipping release."
             echo "skip=true" >> "$GITHUB_OUTPUT"
@@ -144,14 +124,12 @@ jobs:
           VERSION="${{ steps.bump.outputs.version }}"
           BUMP="${{ steps.bump.outputs.bump }}"
 
-          # Collect commits grouped by type
           if [ -z "$PREV_TAG" ]; then
             COMMITS=$(git log --pretty=format:"%s|||%h" --no-merges)
           else
             COMMITS=$(git log "${PREV_TAG}..HEAD" --pretty=format:"%s|||%h" --no-merges)
           fi
 
-          # Build release notes
           BREAKING=""
           FEATURES=""
           FIXES=""
@@ -162,7 +140,6 @@ jobs:
             MSG=$(echo "$line" | cut -d'|' -f1)
             HASH=$(echo "$line" | rev | cut -d'|' -f1 | rev)
 
-            # Categorize
             if echo "$MSG" | grep -qiE '^[a-z]+(\(.+\))?!:|BREAKING[ _-]CHANGE'; then
               CLEAN=$(echo "$MSG" | sed -E 's/^[a-z]+(\([^)]*\))?!?:\s*//')
               BREAKING="${BREAKING}\n- ${CLEAN} (\`${HASH}\`)"
@@ -180,13 +157,8 @@ jobs:
             fi
           done <<< "$COMMITS"
 
-          # Assemble body
           {
             echo "BODY<<RELEASE_EOF"
-
-            BUMP_LABEL="patch"
-            [ "$BUMP" = "minor" ] && BUMP_LABEL="minor"
-            [ "$BUMP" = "major" ] && BUMP_LABEL="major"
 
             if [ -n "$BREAKING" ]; then
               echo "### Breaking Changes"
@@ -226,10 +198,9 @@ jobs:
             echo "RELEASE_EOF"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Update package.json and package-lock.json version
+      - name: Update package.json version
         if: steps.check_commit.outputs.skip != 'true' && steps.bump.outputs.skip != 'true'
-        run: |
-          npm version "${{ steps.bump.outputs.version }}" --no-git-tag-version --allow-same-version
+        run: npm version "${{ steps.bump.outputs.version }}" --no-git-tag-version --allow-same-version
 
       - name: Commit version bump
         if: steps.check_commit.outputs.skip != 'true' && steps.bump.outputs.skip != 'true'
@@ -257,3 +228,94 @@ jobs:
           prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ─── Build jobs (run in parallel after release) ─────────────────────────────
+
+  build-windows:
+    needs: release
+    if: needs.release.outputs.skip != 'true'
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.release.outputs.tag }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Build and Publish
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          npm run build
+          npx electron-builder --windows --publish always
+
+  build-linux:
+    needs: release
+    if: needs.release.outputs.skip != 'true'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.release.outputs.tag }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libarchive-tools rpm
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Build and Publish
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          npm run build
+          npx electron-builder --linux --publish always
+
+  build-macos:
+    needs: release
+    if: needs.release.outputs.skip != 'true'
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.release.outputs.tag }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Install Python setuptools
+        run: python3 -m pip install setuptools
+
+      - name: Build and Publish
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          npm run build
+          npx electron-builder --macos --publish always
