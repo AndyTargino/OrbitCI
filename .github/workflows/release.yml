@@ -224,7 +224,7 @@ jobs:
           tag_name: ${{ steps.bump.outputs.tag }}
           name: OrbitCI ${{ steps.bump.outputs.tag }}
           body: ${{ steps.notes.outputs.BODY }}
-          draft: false
+          draft: true
           prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -319,3 +319,16 @@ jobs:
         run: |
           npm run build
           npx electron-builder --macos --publish always
+
+  publish-release:
+    needs: [release, build-windows, build-linux, build-macos]
+    if: needs.release.outputs.skip != 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.release.outputs.tag }}
+          draft: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
