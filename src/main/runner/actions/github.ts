@@ -34,11 +34,14 @@ export const githubActions: Record<string, ActionHandler> = {
     setOutput('html-url', release.htmlUrl)
 
     // Fire release event to trigger dependent workflows (e.g. build-*.yml)
+    log(`[debug] isDraft=${isDraft}, repoId=${repoId ?? 'undefined'}`)
     if (!isDraft && repoId) {
       const runner = getRunnerInstance()
+      log(`[debug] runner instance: ${runner ? 'found' : 'NULL'}`)
       if (runner) {
         const branch = env?.GITHUB_REF_NAME ?? env?.GITHUB_HEAD_REF ?? 'main'
         const sha = env?.GITHUB_SHA ?? ''
+        log(`[debug] Firing triggerEvent('release') with tag=${w['tag-name']}, branch=${branch}, sha=${sha.slice(0, 7)}`)
         await runner.triggerEvent(repoId, 'release', {
           branch,
           sha,
@@ -54,6 +57,8 @@ export const githubActions: Record<string, ActionHandler> = {
         })
         log(`✓ Evento release disparado para workflows dependentes`)
       }
+    } else {
+      log(`[debug] Skipping release trigger: isDraft=${isDraft}, repoId=${repoId ?? 'missing'}`)
     }
 
     return { 'release-id': String(release.id), 'html-url': release.htmlUrl }

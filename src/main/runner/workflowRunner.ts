@@ -68,22 +68,40 @@ export class WorkflowRunner {
   }
 
   async triggerEvent(repoId: string, eventName: string, event: TriggerEvent): Promise<void> {
+    console.log(`[WorkflowRunner] triggerEvent called: event=${eventName}, repoId=${repoId}`)
+
     const [repoRow] = await db.select().from(repos).where(eq(repos.id, repoId)).limit(1)
-    if (!repoRow?.localPath) return
+    if (!repoRow?.localPath) {
+      console.log(`[WorkflowRunner] triggerEvent: repo not found or no localPath for ${repoId}`)
+      return
+    }
 
     const workflowsDir = join(repoRow.localPath, WORKFLOWS_DIR)
-    if (!existsSync(workflowsDir)) return
+    if (!existsSync(workflowsDir)) {
+      console.log(`[WorkflowRunner] triggerEvent: workflows dir not found: ${workflowsDir}`)
+      return
+    }
 
     const files = readdirSync(workflowsDir).filter((f) => f.endsWith('.yml') || f.endsWith('.yaml'))
+    console.log(`[WorkflowRunner] triggerEvent: found ${files.length} workflow files: ${files.join(', ')}`)
 
+    let matched = 0
     for (const file of files) {
       const wf = this.parseWorkflow(join(workflowsDir, file))
-      if (!wf) continue
+      if (!wf) {
+        console.log(`[WorkflowRunner] triggerEvent: could not parse ${file}`)
+        continue
+      }
 
-      if (this.matchesTrigger(wf, eventName, event)) {
+      const matches = this.matchesTrigger(wf, eventName, event)
+      console.log(`[WorkflowRunner] triggerEvent: ${file} → matchesTrigger(${eventName}) = ${matches} (on: ${JSON.stringify(wf.on)})`)
+
+      if (matches) {
+        matched++
         this.queueRun(repoId, file, eventName, event).catch(console.error)
       }
     }
+    console.log(`[WorkflowRunner] triggerEvent: ${matched}/${files.length} workflows matched event '${eventName}'`)
   }
 
   async queueRun(

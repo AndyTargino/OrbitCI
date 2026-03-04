@@ -180,6 +180,9 @@ export async function runJob(opts: JobRunnerOpts): Promise<JobResult> {
         outputs: { ...result.outputs },
         outcome: result.status
       }
+      if (Object.keys(result.outputs).length > 0) {
+        console.log(`[JobRunner] Step '${stepIdKey}' outputs:`, JSON.stringify(result.outputs))
+      }
 
       // Parse GITHUB_ENV file → propagate env vars to subsequent steps
       const envFilePath = stepEnv.GITHUB_ENV
