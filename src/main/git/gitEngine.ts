@@ -135,6 +135,10 @@ export async function discardAll(localPath: string): Promise<void> {
 
 export async function commit(localPath: string, message: string): Promise<string> {
   const g = git(localPath)
+  const status = await g.status()
+  if (!status.current || status.current === 'HEAD') {
+    throw new Error('Commit: HEAD está desanexado (detached HEAD). Faça checkout de uma branch antes de commitar.')
+  }
   const result = await g.commit(message)
   return result.commit
 }
@@ -147,6 +151,9 @@ export async function push(
 ): Promise<void> {
   const g = git(localPath)
   const status = await g.status()
+  if (!branch && (!status.current || status.current === 'HEAD')) {
+    throw new Error('Push: HEAD está desanexado (detached HEAD). Faça checkout de uma branch antes de fazer push.')
+  }
   const targetBranch = branch ?? status.current ?? 'main'
   const args: string[] = ['--set-upstream', remote, targetBranch]
   if (withTags) args.push('--tags')

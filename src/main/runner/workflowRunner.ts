@@ -11,7 +11,7 @@ import { evaluateExpression, type ExpressionContext } from './expressionEngine'
 import { resolveSecrets } from '../services/secretService'
 import { ProcessMonitor } from '../services/processMonitor'
 import { sendRunLog, sendToRenderer, notifyRunComplete, notifyRunStart } from '../services/notifyService'
-import { getCurrentSha, getCurrentBranch } from '../git/gitEngine'
+import { getCurrentSha, getCurrentBranch, checkout as gitCheckout } from '../git/gitEngine'
 import { getStoredToken } from '../services/githubService'
 import { IPC_CHANNELS, WORKFLOWS_DIR, DEFAULT_MAX_CONCURRENT } from '@shared/constants'
 import type { WorkflowDefinition, JobDefinition, RunStatus } from '@shared/types'
@@ -235,6 +235,13 @@ export class WorkflowRunner {
   ): Promise<void> {
     cancelFlags.set(runId, false)
     const startedAt = new Date().toISOString()
+
+    // Save original branch so we can restore after workflow execution
+    let originalBranch: string | null = null
+    try {
+      originalBranch = await getCurrentBranch(workspace)
+      if (originalBranch === 'HEAD') originalBranch = null // Already detached
+    } catch { /* ignore */ }
 
     await db.update(runs).set({ status: 'running', startedAt }).where(eq(runs.id, runId))
     notifyRunStart(runId, wf.name ?? 'Workflow', repoId)
@@ -485,6 +492,20 @@ export class WorkflowRunner {
       notifyRunComplete(runId, wf.name ?? workflowFile(runId), finalStatus as 'success' | 'failure', repoId)
     }
     cancelFlags.delete(runId)
+
+    // Restore original branch if workflow left repo in detached HEAD
+    if (originalBranch) {
+      try {
+        const currentBranch = await getCurrentBranch(workspace)
+        if (currentBranch === 'HEAD' || currentBranch !== originalBranch) {
+          await gitCheckout(workspace, originalBranch)
+          console.log(`[WorkflowRunner] Restored branch: ${originalBranch}`)
+        }
+      } catch (err) {
+        console.warn(`[WorkflowRunner] Could not restore branch '${originalBranch}':`, err)
+      }
+    }
+
     // Clean up temp files created for this run
     try { rmSync(runTmpDir, { recursive: true, force: true }) } catch { /* ignore */ }
   }
