@@ -3,11 +3,12 @@ import { useEffect, useRef, useState } from 'react'
 import {
   History, Shield, Plus, BarChart2,
   CheckCircle2, XCircle, Loader2, AlertCircle, LayoutDashboard, RefreshCw,
-  LogOut, ChevronDown, UserCircle2, Settings, ArrowUp, ArrowDown, GitBranch
+  LogOut, ChevronDown, UserCircle2, Settings, ArrowUp, ArrowDown, GitBranch,
+  Download, RotateCcw
 } from 'lucide-react'
 import orbitIcon from '@/assets/icon.png'
 import { cn } from '@/lib/utils'
-import { useRepoStore, useRunsStore, useAuthStore } from '@/store'
+import { useRepoStore, useRunsStore, useAuthStore, useUpdaterStore } from '@/store'
 import type { GitSummary } from '@/store'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -16,6 +17,7 @@ import {
   DropdownMenuSeparator, DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu'
 import { electron } from '@/lib/electron'
+import { IPC_CHANNELS } from '@shared/constants'
 import type { RunStatus } from '@shared/types'
 
 function OwnerAvatar({ owner, className }: { owner: string; className?: string }): JSX.Element {
@@ -55,7 +57,32 @@ export function Sidebar(): JSX.Element {
   const { repos, selectedRepoId, selectRepo, gitSummaries, setGitSummary } = useRepoStore()
   const { runs } = useRunsStore()
   const { user, setUser } = useAuthStore()
+  const updater = useUpdaterStore()
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  // Subscribe to updater events from main process
+  useEffect(() => {
+    electron.updater.getVersion().then((v) => updater.setCurrentVersion(v))
+    const unsub = electron.on(IPC_CHANNELS.EVENT_UPDATER, (event: unknown) => {
+      updater.handleEvent(event as { type: string; version?: string; percent?: number; message?: string })
+    })
+    return () => { unsub() }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const handleCheckUpdate = async () => {
+    updater.setStatus('checking')
+    await electron.updater.check()
+  }
+
+  const handleDownloadUpdate = async () => {
+    updater.setStatus('downloading')
+    await electron.updater.download()
+  }
+
+  const handleInstallUpdate = () => {
+    electron.updater.install()
+  }
 
   // Fetch git summary for all repos that have a local path
   const fetchSummaries = async () => {
@@ -276,6 +303,77 @@ export function Sidebar(): JSX.Element {
         </div>
       </ScrollArea>
 
+      {/* ── Updater widget ────────────────────────────────────────────────── */}
+      {updater.status !== 'idle' && updater.status !== 'not-available' && (
+        <div className="border-t border-sidebar-border px-3 py-2">
+          {updater.status === 'checking' && (
+            <div className="flex items-center gap-2 text-[11px] text-sidebar-foreground/50">
+              <Loader2 className="h-3 w-3 animate-spin shrink-0" />
+              <span>Verificando atualizações...</span>
+            </div>
+          )}
+
+          {updater.status === 'available' && (
+            <button
+              onClick={handleDownloadUpdate}
+              className="no-drag flex w-full items-center gap-2 rounded-[5px] px-2 py-1.5 text-left hover:bg-[#8b5cf6]/10 transition-colors"
+            >
+              <Download className="h-3.5 w-3.5 text-[#8b5cf6] shrink-0" />
+              <div className="min-w-0 flex-1">
+                <p className="text-[11px] font-medium text-[#8b5cf6]">
+                  v{updater.version} disponível
+                </p>
+                <p className="text-[10px] text-sidebar-foreground/40">Clique para baixar</p>
+              </div>
+            </button>
+          )}
+
+          {updater.status === 'downloading' && (
+            <div className="space-y-1.5">
+              <div className="flex items-center gap-2 text-[11px] text-sidebar-foreground/60">
+                <Loader2 className="h-3 w-3 animate-spin shrink-0 text-[#58a6ff]" />
+                <span>Baixando atualização...</span>
+                <span className="ml-auto text-[10px] tabular-nums">{Math.round(updater.percent)}%</span>
+              </div>
+              <div className="h-1 w-full rounded-full bg-sidebar-border overflow-hidden">
+                <div
+                  className="h-full rounded-full bg-[#58a6ff] transition-all duration-300"
+                  style={{ width: `${updater.percent}%` }}
+                />
+              </div>
+            </div>
+          )}
+
+          {updater.status === 'downloaded' && (
+            <button
+              onClick={handleInstallUpdate}
+              className="no-drag flex w-full items-center gap-2 rounded-[5px] px-2 py-1.5 text-left hover:bg-[#3fb950]/10 transition-colors"
+            >
+              <RotateCcw className="h-3.5 w-3.5 text-[#3fb950] shrink-0" />
+              <div className="min-w-0 flex-1">
+                <p className="text-[11px] font-medium text-[#3fb950]">
+                  v{updater.version} pronta!
+                </p>
+                <p className="text-[10px] text-sidebar-foreground/40">Clique para reiniciar e atualizar</p>
+              </div>
+            </button>
+          )}
+
+          {updater.status === 'error' && (
+            <button
+              onClick={handleCheckUpdate}
+              className="no-drag flex w-full items-center gap-2 rounded-[5px] px-2 py-1.5 text-left hover:bg-[#f85149]/10 transition-colors"
+            >
+              <XCircle className="h-3.5 w-3.5 text-[#f85149] shrink-0" />
+              <div className="min-w-0 flex-1">
+                <p className="text-[11px] font-medium text-[#f85149]">Erro na atualização</p>
+                <p className="text-[10px] text-sidebar-foreground/40 truncate">{updater.error}</p>
+              </div>
+            </button>
+          )}
+        </div>
+      )}
+
       {/* ── User account ──────────────────────────────────────────────────── */}
       <div className="border-t border-sidebar-border px-2 py-2">
         <DropdownMenu>
@@ -329,6 +427,18 @@ export function Sidebar(): JSX.Element {
               <Settings className="h-3.5 w-3.5 mr-2" />
               Configurações
             </DropdownMenuItem>
+            <DropdownMenuItem onClick={handleCheckUpdate} disabled={updater.status === 'checking'}>
+              {updater.status === 'checking'
+                ? <Loader2 className="h-3.5 w-3.5 mr-2 animate-spin" />
+                : <Download className="h-3.5 w-3.5 mr-2" />
+              }
+              Verificar atualizações
+            </DropdownMenuItem>
+            {updater.currentVersion && (
+              <div className="px-3 py-1 text-[10px] text-muted-foreground">
+                v{updater.currentVersion}
+              </div>
+            )}
             <DropdownMenuSeparator />
             <DropdownMenuItem
               className="text-[#f85149] focus:text-[#f85149]"

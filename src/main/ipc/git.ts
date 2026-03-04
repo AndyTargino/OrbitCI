@@ -41,6 +41,18 @@ export function registerGitHandlers(): void {
     return gitEngine.getStatus(localPath)
   })
 
+  ipcMain.handle(IPC_CHANNELS.GIT_DISCARD, async (_, repoId: string, files: string[]) => {
+    const localPath = await getLocalPath(repoId)
+    await gitEngine.discardFiles(localPath, files)
+    return gitEngine.getStatus(localPath)
+  })
+
+  ipcMain.handle(IPC_CHANNELS.GIT_DISCARD_ALL, async (_, repoId: string) => {
+    const localPath = await getLocalPath(repoId)
+    await gitEngine.discardAll(localPath)
+    return gitEngine.getStatus(localPath)
+  })
+
   ipcMain.handle(IPC_CHANNELS.GIT_COMMIT, async (_, repoId: string, message: string) => {
     const localPath = await getLocalPath(repoId)
     const sha = await gitEngine.commit(localPath, message)

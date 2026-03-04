@@ -10,7 +10,9 @@
     "package": "npm run build && electron-builder",
     "rebuild": "electron-rebuild --only better-sqlite3",
     "db:generate": "drizzle-kit generate",
-    "lint": "eslint src --ext .ts,.tsx"
+    "lint": "eslint src --ext .ts,.tsx",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@electron-toolkit/utils": "^4.0.0",
@@ -21,7 +23,7 @@
     "better-sqlite3": "^9.4.3",
     "dockerode": "^4.0.2",
     "drizzle-orm": "^0.38.0",
-    "electron-updater": "^6.1.8",
+    "electron-updater": "^6.8.3",
     "handlebars": "^4.7.8",
     "i18next": "^25.8.14",
     "js-yaml": "^4.1.0",
@@ -76,36 +78,50 @@
     "tailwindcss-animate": "^1.0.7",
     "typescript": "^5.3.3",
     "vite": "^5.0.12",
+    "vitest": "^4.0.18",
     "zustand": "^4.5.0"
   },
   "build": {
     "appId": "com.orbitci.app",
     "productName": "OrbitCI",
     "directories": {
+      "output": "dist",
       "buildResources": "build"
     },
     "files": [
-      "out/**/*"
+      "out/**/*",
+      "package.json"
     ],
-    "linux": {
-      "target": [
-        "deb",
-        "AppImage"
-      ]
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "AndyTargino",
+        "repo": "OrbitCI"
+      }
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "icon.png"
     },
     "mac": {
-      "target": [
-        "dmg"
-      ]
+      "target": "dmg",
+      "category": "public.app-category.developer-tools",
+      "icon": "icon.png"
     },
-    "win": {
+    "linux": {
       "target": [
-        "nsis"
-      ]
+        "AppImage",
+        "deb"
+      ],
+      "icon": "icon.png"
     },
-    "npmRebuild": true,
-    "extraMetadata": {
-      "main": "out/main/index.js"
-    }
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "OrbitCI"
+    },
+    "npmRebuild": true
   }
 }

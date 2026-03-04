@@ -149,3 +149,55 @@ export const useDockerStore = create<DockerState>((set) => ({
   status: null,
   setStatus: (status) => set({ status })
 }))
+
+// ─── Updater Store ───────────────────────────────────────────────────────────
+export type UpdaterStatus = 'idle' | 'checking' | 'available' | 'not-available' | 'downloading' | 'downloaded' | 'error'
+
+interface UpdaterState {
+  status: UpdaterStatus
+  version: string | null
+  percent: number
+  error: string | null
+  currentVersion: string | null
+  setStatus: (status: UpdaterStatus) => void
+  setVersion: (version: string | null) => void
+  setPercent: (percent: number) => void
+  setError: (error: string | null) => void
+  setCurrentVersion: (version: string) => void
+  handleEvent: (event: { type: string; version?: string; percent?: number; message?: string }) => void
+}
+
+export const useUpdaterStore = create<UpdaterState>((set) => ({
+  status: 'idle',
+  version: null,
+  percent: 0,
+  error: null,
+  currentVersion: null,
+  setStatus: (status) => set({ status }),
+  setVersion: (version) => set({ version }),
+  setPercent: (percent) => set({ percent }),
+  setError: (error) => set({ error }),
+  setCurrentVersion: (currentVersion) => set({ currentVersion }),
+  handleEvent: (event) => {
+    switch (event.type) {
+      case 'checking':
+        set({ status: 'checking', error: null })
+        break
+      case 'available':
+        set({ status: 'available', version: event.version ?? null })
+        break
+      case 'not-available':
+        set({ status: 'not-available' })
+        break
+      case 'progress':
+        set({ status: 'downloading', percent: event.percent ?? 0 })
+        break
+      case 'downloaded':
+        set({ status: 'downloaded', version: event.version ?? null, percent: 100 })
+        break
+      case 'error':
+        set({ status: 'error', error: event.message ?? 'Unknown error' })
+        break
+    }
+  }
+}))

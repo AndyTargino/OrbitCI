@@ -77,6 +77,8 @@ export interface ElectronAPI {
     stage: (repoId: string, files: string[]) => Promise<void>
     stageAll: (repoId: string) => Promise<void>
     unstage: (repoId: string, files: string[]) => Promise<void>
+    discard: (repoId: string, files: string[]) => Promise<void>
+    discardAll: (repoId: string) => Promise<void>
     commit: (repoId: string, message: string) => Promise<{ sha: string }>
     push: (repoId: string, branch?: string, withTags?: boolean) => Promise<void>
     pull: (repoId: string) => Promise<void>
@@ -104,6 +106,12 @@ export interface ElectronAPI {
   settings: {
     get: () => Promise<AppSettings>
     update: (updates: Partial<AppSettings>) => Promise<{ success: boolean }>
+  }
+  updater: {
+    check: () => Promise<{ success: boolean; version?: string | null; error?: string }>
+    download: () => Promise<{ success: boolean; error?: string }>
+    install: () => Promise<{ success: boolean }>
+    getVersion: () => Promise<string>
   }
   notify: {
     test: (opts: { type: string; title: string; body: string; duration: number }) => Promise<{ ok: boolean }>

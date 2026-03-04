@@ -1,0 +1,259 @@
+name: Auto Release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Skip if release commit
+        id: check_commit
+        run: |
+          LAST_MSG=$(git log -1 --pretty=format:"%s")
+          if echo "$LAST_MSG" | grep -qE '^release: v'; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Setup Node.js
+        if: steps.check_commit.outputs.skip != 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        if: steps.check_commit.outputs.skip != 'true'
+        run: npm ci
+
+      - name: Run tests
+        if: steps.check_commit.outputs.skip != 'true'
+        run: npm test
+
+      - name: Build
+        if: steps.check_commit.outputs.skip != 'true'
+        run: npm run build
+
+      - name: Determine version bump
+        if: steps.check_commit.outputs.skip != 'true'
+        id: bump
+        run: |
+          # Get the latest tag (semver only)
+          LATEST_TAG=$(git tag -l 'v*' --sort=-v:refname | head -n1)
+
+          if [ -z "$LATEST_TAG" ]; then
+            echo "No previous tag found, starting from package.json version"
+            CURRENT_VERSION=$(node -p "require('./package.json').version")
+          else
+            CURRENT_VERSION="${LATEST_TAG#v}"
+            echo "Latest tag: $LATEST_TAG (version: $CURRENT_VERSION)"
+          fi
+
+          # Parse current version
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT_VERSION"
+
+          # Get commits since last tag (or all commits if no tag)
+          if [ -z "$LATEST_TAG" ]; then
+            COMMITS=$(git log --pretty=format:"%s" --no-merges)
+          else
+            COMMITS=$(git log "${LATEST_TAG}..HEAD" --pretty=format:"%s" --no-merges)
+          fi
+
+          if [ -z "$COMMITS" ]; then
+            echo "No new commits since last tag. Skipping release."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "── Commits since $LATEST_TAG ──"
+          echo "$COMMITS"
+          echo "────────────────────────────────"
+
+          # Analyze commits for version bump level
+          # Priority: major > minor > patch
+          BUMP="patch"
+
+          while IFS= read -r msg; do
+            # BREAKING CHANGE → major
+            if echo "$msg" | grep -qiE '^[a-z]+(\(.+\))?!:|BREAKING[ _-]CHANGE'; then
+              BUMP="major"
+              break
+            fi
+
+            # feat → minor
+            if echo "$msg" | grep -qiE '^feat(\(.+\))?:'; then
+              if [ "$BUMP" != "major" ]; then
+                BUMP="minor"
+              fi
+            fi
+
+            # fix, refactor, perf, etc → patch (already default)
+          done <<< "$COMMITS"
+
+          # Apply bump
+          case "$BUMP" in
+            major)
+              MAJOR=$((MAJOR + 1))
+              MINOR=0
+              PATCH=0
+              ;;
+            minor)
+              MINOR=$((MINOR + 1))
+              PATCH=0
+              ;;
+            patch)
+              PATCH=$((PATCH + 1))
+              ;;
+          esac
+
+          NEW_VERSION="${MAJOR}.${MINOR}.${PATCH}"
+          NEW_TAG="v${NEW_VERSION}"
+
+          # Check if tag already exists
+          if git rev-parse "$NEW_TAG" >/dev/null 2>&1; then
+            echo "Tag $NEW_TAG already exists. Skipping release."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "Bump: $BUMP ($CURRENT_VERSION → $NEW_VERSION)"
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+          echo "version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=$NEW_TAG" >> "$GITHUB_OUTPUT"
+          echo "bump=$BUMP" >> "$GITHUB_OUTPUT"
+          echo "prev_tag=$LATEST_TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Generate release notes
+        if: steps.check_commit.outputs.skip != 'true' && steps.bump.outputs.skip != 'true'
+        id: notes
+        run: |
+          PREV_TAG="${{ steps.bump.outputs.prev_tag }}"
+          VERSION="${{ steps.bump.outputs.version }}"
+          BUMP="${{ steps.bump.outputs.bump }}"
+
+          # Collect commits grouped by type
+          if [ -z "$PREV_TAG" ]; then
+            COMMITS=$(git log --pretty=format:"%s|||%h" --no-merges)
+          else
+            COMMITS=$(git log "${PREV_TAG}..HEAD" --pretty=format:"%s|||%h" --no-merges)
+          fi
+
+          # Build release notes
+          BREAKING=""
+          FEATURES=""
+          FIXES=""
+          IMPROVEMENTS=""
+          OTHER=""
+
+          while IFS= read -r line; do
+            MSG=$(echo "$line" | cut -d'|' -f1)
+            HASH=$(echo "$line" | rev | cut -d'|' -f1 | rev)
+
+            # Categorize
+            if echo "$MSG" | grep -qiE '^[a-z]+(\(.+\))?!:|BREAKING[ _-]CHANGE'; then
+              CLEAN=$(echo "$MSG" | sed -E 's/^[a-z]+(\([^)]*\))?!?:\s*//')
+              BREAKING="${BREAKING}\n- ${CLEAN} (\`${HASH}\`)"
+            elif echo "$MSG" | grep -qiE '^feat(\(.+\))?:'; then
+              CLEAN=$(echo "$MSG" | sed -E 's/^feat(\([^)]*\))?:\s*//')
+              FEATURES="${FEATURES}\n- ${CLEAN} (\`${HASH}\`)"
+            elif echo "$MSG" | grep -qiE '^fix(\(.+\))?:'; then
+              CLEAN=$(echo "$MSG" | sed -E 's/^fix(\([^)]*\))?:\s*//')
+              FIXES="${FIXES}\n- ${CLEAN} (\`${HASH}\`)"
+            elif echo "$MSG" | grep -qiE '^(refactor|perf|style|build|ci|chore)(\(.+\))?:'; then
+              CLEAN=$(echo "$MSG" | sed -E 's/^[a-z]+(\([^)]*\))?:\s*//')
+              IMPROVEMENTS="${IMPROVEMENTS}\n- ${CLEAN} (\`${HASH}\`)"
+            else
+              OTHER="${OTHER}\n- ${MSG} (\`${HASH}\`)"
+            fi
+          done <<< "$COMMITS"
+
+          # Assemble body
+          {
+            echo "BODY<<RELEASE_EOF"
+
+            BUMP_LABEL="patch"
+            [ "$BUMP" = "minor" ] && BUMP_LABEL="minor"
+            [ "$BUMP" = "major" ] && BUMP_LABEL="major"
+
+            if [ -n "$BREAKING" ]; then
+              echo "### Breaking Changes"
+              echo -e "$BREAKING"
+              echo ""
+            fi
+
+            if [ -n "$FEATURES" ]; then
+              echo "### New Features"
+              echo -e "$FEATURES"
+              echo ""
+            fi
+
+            if [ -n "$FIXES" ]; then
+              echo "### Bug Fixes"
+              echo -e "$FIXES"
+              echo ""
+            fi
+
+            if [ -n "$IMPROVEMENTS" ]; then
+              echo "### Improvements"
+              echo -e "$IMPROVEMENTS"
+              echo ""
+            fi
+
+            if [ -n "$OTHER" ]; then
+              echo "### Other Changes"
+              echo -e "$OTHER"
+              echo ""
+            fi
+
+            echo "---"
+            if [ -n "$PREV_TAG" ]; then
+              echo "**Full Changelog**: [\`${PREV_TAG}...v${VERSION}\`](https://github.com/${{ github.repository }}/compare/${PREV_TAG}...v${VERSION})"
+            fi
+
+            echo "RELEASE_EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Update package.json and package-lock.json version
+        if: steps.check_commit.outputs.skip != 'true' && steps.bump.outputs.skip != 'true'
+        run: |
+          npm version "${{ steps.bump.outputs.version }}" --no-git-tag-version --allow-same-version
+
+      - name: Commit version bump
+        if: steps.check_commit.outputs.skip != 'true' && steps.bump.outputs.skip != 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add package.json package-lock.json
+          git commit -m "release: v${{ steps.bump.outputs.version }}"
+          git push
+
+      - name: Create tag
+        if: steps.check_commit.outputs.skip != 'true' && steps.bump.outputs.skip != 'true'
+        run: |
+          git tag "${{ steps.bump.outputs.tag }}"
+          git push origin "${{ steps.bump.outputs.tag }}"
+
+      - name: Create GitHub Release
+        if: steps.check_commit.outputs.skip != 'true' && steps.bump.outputs.skip != 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.bump.outputs.tag }}
+          name: OrbitCI ${{ steps.bump.outputs.tag }}
+          body: ${{ steps.notes.outputs.BODY }}
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

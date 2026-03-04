@@ -82,6 +82,8 @@ const api = {
     stage: (repoId: string, files: string[]) => ipcRenderer.invoke(IPC_CHANNELS.GIT_STAGE, repoId, files),
     stageAll: (repoId: string) => ipcRenderer.invoke(IPC_CHANNELS.GIT_STAGE_ALL, repoId),
     unstage: (repoId: string, files: string[]) => ipcRenderer.invoke(IPC_CHANNELS.GIT_UNSTAGE, repoId, files),
+    discard: (repoId: string, files: string[]) => ipcRenderer.invoke(IPC_CHANNELS.GIT_DISCARD, repoId, files),
+    discardAll: (repoId: string) => ipcRenderer.invoke(IPC_CHANNELS.GIT_DISCARD_ALL, repoId),
     commit: (repoId: string, message: string) => ipcRenderer.invoke(IPC_CHANNELS.GIT_COMMIT, repoId, message),
     push: (repoId: string, branch?: string, withTags?: boolean) =>
       ipcRenderer.invoke(IPC_CHANNELS.GIT_PUSH, repoId, branch, withTags),
@@ -119,6 +121,14 @@ const api = {
   settings: {
     get: (): Promise<AppSettings> => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS_GET),
     update: (updates: Partial<AppSettings>) => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS_UPDATE, updates)
+  },
+
+  // ─── Updater ──────────────────────────────────────────────────────────────
+  updater: {
+    check: () => ipcRenderer.invoke(IPC_CHANNELS.UPDATER_CHECK),
+    download: () => ipcRenderer.invoke(IPC_CHANNELS.UPDATER_DOWNLOAD),
+    install: () => ipcRenderer.invoke(IPC_CHANNELS.UPDATER_INSTALL),
+    getVersion: () => ipcRenderer.invoke(IPC_CHANNELS.UPDATER_GET_VERSION)
   },
 
   // ─── Notifications ─────────────────────────────────────────────────────────

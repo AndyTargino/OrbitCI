@@ -11,6 +11,81 @@ import { processOAuthDeepLink } from './ipc/auth'
 import { initNotificationManager } from './notification/manager'
 import { cleanupOrphanedContainers } from './services/dockerService'
 import { is } from '@electron-toolkit/utils'
+import { autoUpdater } from 'electron-updater'
+import { IPC_CHANNELS } from '../shared/constants'
+
+// ─── Auto-update configuration ───────────────────────────────────────────────
+autoUpdater.autoDownload = false
+autoUpdater.autoInstallOnAppQuit = true
+
+function sendToRenderer(channel: string, ...args: unknown[]) {
+  const wins = BrowserWindow.getAllWindows()
+  if (wins[0]) wins[0].webContents.send(channel, ...args)
+}
+
+// Forward autoUpdater events to renderer
+autoUpdater.on('checking-for-update', () => {
+  sendToRenderer(IPC_CHANNELS.EVENT_UPDATER, { type: 'checking' })
+})
+autoUpdater.on('update-available', (info) => {
+  sendToRenderer(IPC_CHANNELS.EVENT_UPDATER, {
+    type: 'available',
+    version: info.version,
+    releaseNotes: typeof info.releaseNotes === 'string' ? info.releaseNotes : undefined
+  })
+})
+autoUpdater.on('update-not-available', () => {
+  sendToRenderer(IPC_CHANNELS.EVENT_UPDATER, { type: 'not-available' })
+})
+autoUpdater.on('download-progress', (progress) => {
+  sendToRenderer(IPC_CHANNELS.EVENT_UPDATER, {
+    type: 'progress',
+    percent: progress.percent,
+    bytesPerSecond: progress.bytesPerSecond,
+    transferred: progress.transferred,
+    total: progress.total
+  })
+})
+autoUpdater.on('update-downloaded', (info) => {
+  sendToRenderer(IPC_CHANNELS.EVENT_UPDATER, {
+    type: 'downloaded',
+    version: info.version
+  })
+})
+autoUpdater.on('error', (err) => {
+  sendToRenderer(IPC_CHANNELS.EVENT_UPDATER, {
+    type: 'error',
+    message: err?.message ?? 'Unknown error'
+  })
+})
+
+// IPC handlers for updater actions
+ipcMain.handle(IPC_CHANNELS.UPDATER_CHECK, async () => {
+  try {
+    const result = await autoUpdater.checkForUpdates()
+    return { success: true, version: result?.updateInfo?.version ?? null }
+  } catch (err: unknown) {
+    return { success: false, error: err instanceof Error ? err.message : 'Unknown error' }
+  }
+})
+
+ipcMain.handle(IPC_CHANNELS.UPDATER_DOWNLOAD, async () => {
+  try {
+    await autoUpdater.downloadUpdate()
+    return { success: true }
+  } catch (err: unknown) {
+    return { success: false, error: err instanceof Error ? err.message : 'Unknown error' }
+  }
+})
+
+ipcMain.handle(IPC_CHANNELS.UPDATER_INSTALL, () => {
+  autoUpdater.quitAndInstall(false, true)
+  return { success: true }
+})
+
+ipcMain.handle(IPC_CHANNELS.UPDATER_GET_VERSION, () => {
+  return app.getVersion()
+})
 
 // ─── Custom protocol for OAuth callback ───────────────────────────────────────
 app.setAsDefaultProtocolClient('orbitci')
@@ -82,7 +157,7 @@ function createWindow(): void {
   }
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   // Initialize DB (synchronous, fast)
   initDatabase()
 
@@ -113,6 +188,29 @@ app.whenReady().then(() => {
   startScheduleService().catch((err) => {
     console.error('[Main] Failed to start schedule service:', err)
   })
+
+  // Check for updates (respect autoUpdate setting)
+  if (!is.dev) {
+    try {
+      // Load settings to check autoUpdate preference
+      const { sqlite } = await import('./db')
+      const row = sqlite.prepare('SELECT auto_update FROM settings LIMIT 1').get() as { auto_update: number } | undefined
+      const autoUpdateEnabled = row?.auto_update === 1
+
+      if (autoUpdateEnabled) {
+        // Auto-update: check + download + install on quit
+        autoUpdater.autoDownload = true
+        autoUpdater.checkForUpdates().catch(() => {})
+      } else {
+        // Manual: just check, don't download
+        autoUpdater.autoDownload = false
+        autoUpdater.checkForUpdates().catch(() => {})
+      }
+    } catch {
+      // Fallback: just check
+      autoUpdater.checkForUpdates().catch(() => {})
+    }
+  }
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

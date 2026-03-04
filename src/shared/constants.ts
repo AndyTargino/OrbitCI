@@ -62,6 +62,8 @@ export const IPC_CHANNELS = {
   GIT_STAGE: 'git:stage',
   GIT_UNSTAGE: 'git:unstage',
   GIT_STAGE_ALL: 'git:stageAll',
+  GIT_DISCARD: 'git:discard',
+  GIT_DISCARD_ALL: 'git:discardAll',
   GIT_COMMIT: 'git:commit',
   GIT_PUSH: 'git:push',
   GIT_PULL: 'git:pull',
@@ -95,10 +97,17 @@ export const IPC_CHANNELS = {
   // Docker (extended)
   DOCKER_INSTALL: 'docker:install',
 
+  // Updater
+  UPDATER_CHECK: 'updater:check',
+  UPDATER_DOWNLOAD: 'updater:download',
+  UPDATER_INSTALL: 'updater:install',
+  UPDATER_GET_VERSION: 'updater:getVersion',
+
   // Events (main → renderer)
   EVENT_RUN_LOG: 'event:runLog',
   EVENT_RUN_STATUS: 'event:runStatus',
   EVENT_SYNC: 'event:sync',
   EVENT_DOCKER_LOG: 'event:dockerLog',
-  EVENT_OAUTH_CALLBACK: 'event:oauth:callback'
+  EVENT_OAUTH_CALLBACK: 'event:oauth:callback',
+  EVENT_UPDATER: 'event:updater'
 } as const

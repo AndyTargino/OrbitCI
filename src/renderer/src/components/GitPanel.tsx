@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react'
 import {
   GitCommit, GitBranch, ArrowUp, ArrowDown, RefreshCw, Loader2,
-  ChevronDown, ChevronRight, Minus, Plus, GitMerge
+  ChevronDown, ChevronRight, Minus, Plus, GitMerge, File, Undo2
 } from 'lucide-react'
 import { electron } from '@/lib/electron'
 import { Button } from '@/components/ui/button'
@@ -67,9 +67,37 @@ const CLR = {
   numDim:   'rgba(140, 148, 158, 0.4)',
 }
 
+const BINARY_EXTENSIONS = new Set([
+  'png', 'jpg', 'jpeg', 'gif', 'bmp', 'ico', 'webp', 'svg',
+  'woff', 'woff2', 'ttf', 'eot', 'otf',
+  'zip', 'tar', 'gz', 'rar', '7z',
+  'pdf', 'doc', 'docx', 'xls', 'xlsx',
+  'mp3', 'mp4', 'wav', 'avi', 'mov',
+  'exe', 'dll', 'so', 'dylib',
+])
+
+function isBinaryFile(filename: string): boolean {
+  const ext = filename.split('.').pop()?.toLowerCase() ?? ''
+  return BINARY_EXTENSIONS.has(ext)
+}
+
 function DiffViewer({ diff, filename }: { diff: string; filename: string }): JSX.Element {
   const lines = parseDiff(diff)
   const hasContent = lines.some((l) => l.type !== 'header')
+  const binary = isBinaryFile(filename) || diff.includes('Binary files')
+
+  if (binary) {
+    return (
+      <div className="h-full overflow-auto font-mono text-[12px] leading-[1.5]">
+        <div className="sticky top-0 z-10 px-4 py-1.5 border-b border-border bg-[#0d1117] text-[11px] text-muted-foreground">
+          {filename}
+        </div>
+        <div className="flex items-center justify-center h-[calc(100%-30px)] text-[12px] text-muted-foreground">
+          Arquivo binário — visualização não disponível
+        </div>
+      </div>
+    )
+  }
 
   if (!diff.trim() || !hasContent) {
     return (
@@ -160,119 +188,169 @@ function DiffViewer({ diff, filename }: { diff: string; filename: string }): JSX
   )
 }
 
-// ── File status badge ─────────────────────────────────────────────────────────
-const STATUS_META: Record<string, { label: string; color: string; borderColor: string }> = {
-  modified:  { label: 'M', color: 'text-[#d29922]', borderColor: '#d29922' },
-  added:     { label: 'A', color: 'text-[#3fb950]', borderColor: '#3fb950' },
-  deleted:   { label: 'D', color: 'text-[#f85149]', borderColor: '#f85149' },
-  renamed:   { label: 'R', color: 'text-[#58a6ff]', borderColor: '#58a6ff' },
-  untracked: { label: 'U', color: 'text-[#79c0ff]', borderColor: '#79c0ff' },
-  copied:    { label: 'C', color: 'text-[#e3b341]', borderColor: '#e3b341' },
-  unmerged:  { label: '!', color: 'text-[#f85149]', borderColor: '#f85149' },
+// ── File status badge (VSCode style — right-aligned letter) ──────────────────
+const STATUS_META: Record<string, { label: string; color: string }> = {
+  modified:  { label: 'M', color: '#e2c08d' },
+  added:     { label: 'A', color: '#73c991' },
+  deleted:   { label: 'D', color: '#c74e39' },
+  renamed:   { label: 'R', color: '#73c991' },
+  untracked: { label: 'U', color: '#73c991' },
+  copied:    { label: 'C', color: '#73c991' },
+  unmerged:  { label: '!', color: '#e5534b' },
+}
+
+// ── File icon color by extension (simplified VSCode Seti-style) ──────────────
+const EXT_COLORS: Record<string, string> = {
+  ts: '#3178c6', tsx: '#3178c6', js: '#f1e05a', jsx: '#f1e05a',
+  json: '#f1e05a', css: '#563d7c', scss: '#c6538c', html: '#e34c26',
+  md: '#519aba', yml: '#cb171e', yaml: '#cb171e', svg: '#ffb13b',
+  png: '#a074c4', jpg: '#a074c4', gif: '#a074c4', ico: '#a074c4',
+  lock: '#6a737d', sh: '#89e051', bash: '#89e051',
+  py: '#3572a5', go: '#00add8', rs: '#dea584', rb: '#701516',
+  vue: '#41b883', sql: '#e38c00',
+}
+
+function getFileIconColor(filename: string): string {
+  const ext = filename.split('.').pop()?.toLowerCase() ?? ''
+  return EXT_COLORS[ext] ?? '#8b949e'
 }
 
 function StatusBadge({ status }: { status: string }): JSX.Element {
   const s = STATUS_META[status] ?? STATUS_META.modified
   return (
-    <span className={cn('text-[10px] font-bold w-3 shrink-0 text-right', s.color)}>
+    <span
+      className="text-[11px] font-medium w-4 shrink-0 text-right tracking-tight"
+      style={{ color: s.color }}
+    >
       {s.label}
     </span>
   )
 }
 
-// ── File row ──────────────────────────────────────────────────────────────────
+// ── File row (VSCode style) ──────────────────────────────────────────────────
 function FileRow({
   file,
   isSelected,
   actionIcon,
   onAction,
+  onDiscard,
   onClick
 }: {
   file: GitFile
   isSelected: boolean
   actionIcon: 'stage' | 'unstage'
   onAction: () => void
+  onDiscard?: () => void
   onClick: () => void
 }): JSX.Element {
   const filename = file.path.split('/').pop() ?? file.path
   const dir = file.path.includes('/') ? file.path.slice(0, file.path.lastIndexOf('/')) : ''
-  const borderColor = (STATUS_META[file.status] ?? STATUS_META.modified).borderColor
+  const iconColor = getFileIconColor(filename)
 
   return (
     <div
       onClick={onClick}
       className={cn(
-        'flex items-center gap-2 pl-2 pr-3 py-[5px] cursor-pointer group select-none border-l-2',
-        isSelected ? 'bg-sidebar-accent' : 'hover:bg-muted/30'
+        'flex items-center h-[22px] pl-5 pr-2 cursor-pointer group select-none',
+        isSelected
+          ? 'bg-[#04395e]'
+          : 'hover:bg-[#2a2d2e]'
       )}
-      style={{ borderLeftColor: borderColor }}
     >
-      <StatusBadge status={file.status} />
-      <div className="min-w-0 flex-1 overflow-hidden">
-        <span className="text-[12px] truncate block">{filename}</span>
+      {/* File icon */}
+      <File className="h-[14px] w-[14px] shrink-0 mr-1.5" style={{ color: iconColor }} />
+
+      {/* Filename + dir (single line, VSCode style) */}
+      <div className="min-w-0 flex-1 flex items-baseline gap-1.5 overflow-hidden">
+        <span className="text-[13px] leading-[22px] truncate shrink-0">{filename}</span>
         {dir && (
-          <span className="text-[10px] text-muted-foreground/50 truncate block leading-tight">{dir}</span>
+          <span className="text-[12px] leading-[22px] text-[#8b949e]/60 truncate">{dir}</span>
         )}
       </div>
-      <button
-        onClick={(e) => { e.stopPropagation(); onAction() }}
-        className={cn(
-          'shrink-0 h-5 w-5 flex items-center justify-center rounded transition-all',
-          'opacity-0 group-hover:opacity-100',
-          actionIcon === 'stage'
-            ? 'hover:bg-[#3fb950]/20 hover:text-[#3fb950]'
-            : 'hover:bg-[#f85149]/20 hover:text-[#f85149]'
+
+      {/* Hover action buttons */}
+      <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+        {onDiscard && (
+          <button
+            onClick={(e) => { e.stopPropagation(); onDiscard() }}
+            className="h-[18px] w-[18px] flex items-center justify-center rounded hover:bg-[#ffffff15]"
+            title="Descartar alterações"
+          >
+            <Undo2 className="h-[13px] w-[13px] text-[#c5c5c5]" />
+          </button>
         )}
-        title={actionIcon === 'stage' ? 'Adicionar ao stage' : 'Remover do stage'}
-      >
-        {actionIcon === 'stage'
-          ? <Plus className="h-3.5 w-3.5" />
-          : <Minus className="h-3.5 w-3.5" />
-        }
-      </button>
+        <button
+          onClick={(e) => { e.stopPropagation(); onAction() }}
+          className="h-[18px] w-[18px] flex items-center justify-center rounded hover:bg-[#ffffff15]"
+          title={actionIcon === 'stage' ? 'Stage Changes' : 'Unstage Changes'}
+        >
+          {actionIcon === 'stage'
+            ? <Plus className="h-[14px] w-[14px] text-[#c5c5c5]" />
+            : <Minus className="h-[14px] w-[14px] text-[#c5c5c5]" />
+          }
+        </button>
+      </div>
+
+      {/* Status badge (right) */}
+      <StatusBadge status={file.status} />
     </div>
   )
 }
 
-// ── Section header ────────────────────────────────────────────────────────────
+// ── Section header (VSCode style) ────────────────────────────────────────────
+type SectionAction = {
+  icon: 'stage-all' | 'unstage-all' | 'discard-all'
+  title: string
+  onClick: () => void
+}
+
 function SectionHeader({
   label,
   count,
   collapsed,
   onToggle,
-  action,
-  accent
+  actions
 }: {
   label: string
   count: number
   collapsed: boolean
   onToggle: () => void
-  action?: { label: string; onClick: () => void }
-  accent?: string
+  actions?: SectionAction[]
 }): JSX.Element {
+  const iconMap = {
+    'stage-all': <Plus className="h-[14px] w-[14px] text-[#c5c5c5]" />,
+    'unstage-all': <Minus className="h-[14px] w-[14px] text-[#c5c5c5]" />,
+    'discard-all': <Undo2 className="h-[13px] w-[13px] text-[#c5c5c5]" />,
+  }
+
   return (
     <div
-      className="flex items-center gap-1.5 px-2 py-1.5 cursor-pointer hover:bg-muted/20 select-none group"
+      className="flex items-center h-[22px] px-1 cursor-pointer hover:bg-[#2a2d2e] select-none group"
       onClick={onToggle}
     >
       {collapsed
-        ? <ChevronRight className="h-3 w-3 text-muted-foreground/60 shrink-0" />
-        : <ChevronDown className="h-3 w-3 text-muted-foreground/60 shrink-0" />
+        ? <ChevronRight className="h-3 w-3 text-[#c5c5c5] shrink-0" />
+        : <ChevronDown className="h-3 w-3 text-[#c5c5c5] shrink-0" />
       }
-      {accent && (
-        <span className="h-1.5 w-1.5 rounded-full shrink-0" style={{ backgroundColor: accent }} />
-      )}
-      <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70 flex-1">
+      <span className="text-[11px] font-semibold uppercase tracking-wide text-[#c5c5c5] flex-1 ml-0.5">
         {label}
       </span>
-      <span className="text-[10px] text-muted-foreground/50 mr-1">{count}</span>
-      {action && (
-        <button
-          onClick={(e) => { e.stopPropagation(); action.onClick() }}
-          className="text-[10px] text-muted-foreground/60 hover:text-foreground px-1.5 py-0.5 rounded border border-border/60 hover:border-border hover:bg-muted transition-all"
-        >
-          {action.label}
-        </button>
+      <span className="text-[11px] text-[#c5c5c5]/70 bg-[#4d4d4d] rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1.5 mr-1 font-medium">
+        {count}
+      </span>
+      {actions && (
+        <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+          {actions.map((action) => (
+            <button
+              key={action.icon}
+              onClick={(e) => { e.stopPropagation(); action.onClick() }}
+              className="h-[18px] w-[18px] flex items-center justify-center rounded hover:bg-[#ffffff15]"
+              title={action.title}
+            >
+              {iconMap[action.icon]}
+            </button>
+          ))}
+        </div>
       )}
     </div>
   )
@@ -330,6 +408,28 @@ export function GitPanel({ repoId, gitStatus, onRefresh }: Props): JSX.Element {
 
   const handleStageAll = async () => {
     await electron.git.stageAll(repoId)
+    refreshWithStatus()
+  }
+
+  const handleDiscard = async (file: string) => {
+    await electron.git.discard(repoId, [file])
+    setSelectedFile(null)
+    setDiff('')
+    onRefresh()
+  }
+
+  const handleDiscardAll = async () => {
+    await electron.git.discardAll(repoId)
+    setSelectedFile(null)
+    setDiff('')
+    onRefresh()
+  }
+
+  const handleUnstageAll = async () => {
+    if (!gitStatus) return
+    for (const f of gitStatus.staged) {
+      await electron.git.unstage(repoId, [f.path])
+    }
     refreshWithStatus()
   }
 
@@ -497,24 +597,18 @@ export function GitPanel({ repoId, gitStatus, onRefresh }: Props): JSX.Element {
             ) : (
               <>
                 {/* Staged */}
-                <SectionHeader
-                  label="Staged"
-                  count={gitStatus.staged.length}
-                  collapsed={stagedCollapsed}
-                  onToggle={() => setStagedCollapsed((v) => !v)}
-                  accent="#3fb950"
-                  action={hasStaged ? { label: '− Tudo', onClick: async () => {
-                    for (const f of gitStatus.staged) {
-                      await electron.git.unstage(repoId, [f.path])
-                    }
-                    refreshWithStatus()
-                  }} : undefined}
-                />
-                {!stagedCollapsed && (
-                  <div>
-                    {gitStatus.staged.length === 0 ? (
-                      <p className="text-[11px] text-muted-foreground/40 px-7 py-2">Nenhum arquivo</p>
-                    ) : gitStatus.staged.map((file) => (
+                {hasStaged && (
+                  <>
+                    <SectionHeader
+                      label="Staged Changes"
+                      count={gitStatus.staged.length}
+                      collapsed={stagedCollapsed}
+                      onToggle={() => setStagedCollapsed((v) => !v)}
+                      actions={[
+                        { icon: 'unstage-all', title: 'Unstage All Changes', onClick: handleUnstageAll }
+                      ]}
+                    />
+                    {!stagedCollapsed && gitStatus.staged.map((file) => (
                       <FileRow
                         key={file.path}
                         file={file}
@@ -524,33 +618,34 @@ export function GitPanel({ repoId, gitStatus, onRefresh }: Props): JSX.Element {
                         onClick={() => selectFile(file.path)}
                       />
                     ))}
-                  </div>
+                  </>
                 )}
 
                 {/* Changes */}
-                <SectionHeader
-                  label="Alterações"
-                  count={allChanges.length}
-                  collapsed={changesCollapsed}
-                  onToggle={() => setChangesCollapsed((v) => !v)}
-                  accent="#d29922"
-                  action={hasChanges ? { label: '+ Tudo', onClick: handleStageAll } : undefined}
-                />
-                {!changesCollapsed && (
-                  <div>
-                    {allChanges.length === 0 ? (
-                      <p className="text-[11px] text-muted-foreground/40 px-7 py-2">Sem alterações</p>
-                    ) : allChanges.map((file) => (
+                {hasChanges && (
+                  <>
+                    <SectionHeader
+                      label="Changes"
+                      count={allChanges.length}
+                      collapsed={changesCollapsed}
+                      onToggle={() => setChangesCollapsed((v) => !v)}
+                      actions={[
+                        { icon: 'discard-all', title: 'Discard All Changes', onClick: handleDiscardAll },
+                        { icon: 'stage-all', title: 'Stage All Changes', onClick: handleStageAll }
+                      ]}
+                    />
+                    {!changesCollapsed && allChanges.map((file) => (
                       <FileRow
                         key={file.path}
                         file={file}
                         isSelected={selectedFile === file.path}
                         actionIcon="stage"
                         onAction={() => handleStage(file.path)}
+                        onDiscard={() => handleDiscard(file.path)}
                         onClick={() => selectFile(file.path)}
                       />
                     ))}
-                  </div>
+                  </>
                 )}
               </>
             )}

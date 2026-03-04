@@ -71,8 +71,25 @@ export async function getStatus(localPath: string): Promise<GitStatus> {
 
 export async function getDiff(localPath: string, file?: string): Promise<string> {
   const g = git(localPath)
-  if (file) return g.diff(['HEAD', '--', file])
-  return g.diff(['HEAD'])
+  if (!file) return g.diff(['HEAD'])
+
+  // Try normal diff first (works for tracked files)
+  const d = await g.diff(['HEAD', '--', file]).catch(() => '')
+  if (d.trim()) return d
+
+  // For untracked / new files, use --no-index against /dev/null
+  try {
+    return await g.diff(['--no-index', '/dev/null', file])
+  } catch (err: unknown) {
+    // --no-index exits with code 1 when there IS a diff (it means files differ)
+    if (err && typeof err === 'object' && 'message' in err) {
+      const msg = (err as { message: string }).message
+      // simple-git wraps the output in the error message
+      const diffStart = msg.indexOf('diff --git')
+      if (diffStart !== -1) return msg.slice(diffStart)
+    }
+    return ''
+  }
 }
 
 export async function stageFiles(localPath: string, files: string[]): Promise<void> {
@@ -88,6 +105,32 @@ export async function stageAll(localPath: string): Promise<void> {
 export async function unstageFiles(localPath: string, files: string[]): Promise<void> {
   const g = git(localPath)
   await g.reset(['HEAD', '--', ...files])
+}
+
+export async function discardFiles(localPath: string, files: string[]): Promise<void> {
+  const g = git(localPath)
+  // Separate tracked vs untracked
+  const status = await getStatus(localPath)
+  const untrackedPaths = new Set(status.untracked.map((f) => f.path))
+  const tracked = files.filter((f) => !untrackedPaths.has(f))
+  const untracked = files.filter((f) => untrackedPaths.has(f))
+
+  if (tracked.length > 0) {
+    await g.checkout(['--', ...tracked])
+  }
+  if (untracked.length > 0) {
+    const { resolve } = await import('path')
+    const { unlink } = await import('fs/promises')
+    for (const f of untracked) {
+      await unlink(resolve(localPath, f)).catch(() => {})
+    }
+  }
+}
+
+export async function discardAll(localPath: string): Promise<void> {
+  const g = git(localPath)
+  await g.checkout(['--', '.'])
+  await g.clean('f', ['-d'])
 }
 
 export async function commit(localPath: string, message: string): Promise<string> {

@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Settings as SettingsIcon, LogOut, Container, Bell, RefreshCw, Save, Loader2, Github, Download } from 'lucide-react'
+import { Settings as SettingsIcon, LogOut, Container, Bell, RefreshCw, Save, Loader2, Github, Download, ArrowDownToLine } from 'lucide-react'
 import { electron } from '@/lib/electron'
-import { useAuthStore, useSettingsStore, useDockerStore } from '@/store'
+import { useAuthStore, useSettingsStore, useDockerStore, useUpdaterStore } from '@/store'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -467,6 +467,36 @@ export function Settings(): JSX.Element {
               ))}
             </div>
           </div>
+        </CardContent>
+      </Card>
+
+      {/* Auto-update */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <ArrowDownToLine className="h-4 w-4" />
+            Atualizações
+          </CardTitle>
+          <CardDescription>Configure o comportamento de atualização automática do OrbitCI</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="font-medium text-sm">Atualizar automaticamente</p>
+              <p className="text-xs text-muted-foreground">
+                Verifica e instala atualizações automaticamente ao iniciar
+              </p>
+            </div>
+            <Switch
+              checked={form.autoUpdate}
+              onCheckedChange={(checked) => setForm((f) => ({ ...f, autoUpdate: checked }))}
+            />
+          </div>
+          {!form.autoUpdate && (
+            <p className="text-[11px] text-muted-foreground/60">
+              Quando desativado, você pode verificar manualmente no menu do usuário na sidebar.
+            </p>
+          )}
         </CardContent>
       </Card>
 
