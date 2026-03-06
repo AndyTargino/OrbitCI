@@ -7,10 +7,10 @@ interface StatusBadgeProps {
 }
 
 const styles: Record<RunStatus, string> = {
-  success: 'text-[#3fb950] border-[#3fb950]/25 bg-[#3fb950]/10',
-  failure: 'text-[#f85149] border-[#f85149]/25 bg-[#f85149]/10',
-  running: 'text-[#58a6ff] border-[#58a6ff]/25 bg-[#58a6ff]/10',
-  cancelled: 'text-[#d29922] border-[#d29922]/25 bg-[#d29922]/10',
+  success: 'text-[#4ade80] border-[#4ade80]/20 bg-[#4ade80]/10',
+  failure: 'text-[#f87171] border-[#f87171]/20 bg-[#f87171]/10',
+  running: 'text-[#60a5fa] border-[#60a5fa]/20 bg-[#60a5fa]/10',
+  cancelled: 'text-[#a1a1aa] border-[#a1a1aa]/20 bg-[#a1a1aa]/10',
   pending: 'text-muted-foreground border-border bg-muted/50'
 }
 

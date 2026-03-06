@@ -6,3 +6,5 @@ dist
 *.db
 .claude
 IDEIA.md
+*.tsbuildinfo
+

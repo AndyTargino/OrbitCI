@@ -1,4 +1,4 @@
-import { CheckCircle2, XCircle, Loader2, AlertCircle, Circle } from 'lucide-react'
+import { CheckCircle2, XCircle, Loader2, Ban, Circle } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { RunStatus } from '@shared/types'
 
@@ -14,15 +14,15 @@ export function StatusIcon({ status, size = 'sm', className }: StatusIconProps):
   const s = sizeMap[size]
   switch (status) {
     case 'success':
-      return <CheckCircle2 className={cn(s, 'text-[#3fb950] shrink-0', className)} />
+      return <CheckCircle2 className={cn(s, 'status-success shrink-0', className)} />
     case 'failure':
-      return <XCircle className={cn(s, 'text-[#f85149] shrink-0', className)} />
+      return <XCircle className={cn(s, 'status-failure shrink-0', className)} />
     case 'running':
-      return <Loader2 className={cn(s, 'text-[#58a6ff] animate-spin shrink-0', className)} />
+      return <Loader2 className={cn(s, 'status-running animate-spin shrink-0', className)} />
     case 'cancelled':
-      return <AlertCircle className={cn(s, 'text-[#d29922] shrink-0', className)} />
+      return <Ban className={cn(s, 'status-cancelled shrink-0', className)} />
     case 'pending':
-      return <Circle className={cn(s, 'text-muted-foreground shrink-0', className)} />
+      return <Circle className={cn(s, 'status-pending shrink-0', className)} />
     default:
       return <span className={cn('h-2 w-2 rounded-full bg-border shrink-0', className)} />
   }

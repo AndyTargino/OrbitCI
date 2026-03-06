@@ -1,5 +1,6 @@
 import { useEffect, useState, useMemo, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import {
   Github, Loader2, RefreshCw, ExternalLink,
   CheckCircle2, XCircle, AlertCircle, Circle,
@@ -21,13 +22,6 @@ import type { Run, RunStatus, GitHubRun } from '@shared/types'
 // ─── Types ───────────────────────────────────────────────────────────────────
 type SourceFilter = 'all' | 'orbit' | 'github'
 type StatusFilter = 'all' | 'success' | 'failure' | 'running' | 'cancelled'
-
-const SOURCE_LABELS: Record<SourceFilter, string> = {
-  all: 'Todos', orbit: 'OrbitCI', github: 'GitHub Actions'
-}
-const STATUS_LABELS: Record<StatusFilter, string> = {
-  all: 'Todos', success: 'Sucesso', failure: 'Falha', running: 'Rodando', cancelled: 'Cancelado'
-}
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 function ghStatusToLocal(status: string | null, conclusion: string | null): RunStatus {
@@ -60,39 +54,40 @@ function FilterPill({ label, active, onClick }: { label: string; active: boolean
 }
 
 // ─── GitHub run visual helpers ───────────────────────────────────────────────
-function ghRunVisual(run: GitHubRun): { icon: JSX.Element; badge: string; badgeCls: string } {
+function ghRunVisual(run: GitHubRun, t: any): { icon: JSX.Element; badge: string; badgeCls: string } {
   if (run.status === 'in_progress') {
     return {
       icon: <Loader2 className="h-4 w-4 text-[#58a6ff] animate-spin shrink-0" />,
-      badge: 'executando',
+      badge: t('workspace.status.running', 'running'),
       badgeCls: 'text-[#58a6ff] border-[#58a6ff]/25 bg-[#58a6ff]/10'
     }
   }
   if (run.status !== 'completed') {
     return {
       icon: <Circle className="h-4 w-4 text-muted-foreground shrink-0" />,
-      badge: 'aguardando',
+      badge: t('workspace.status.pending', 'pending'),
       badgeCls: 'text-muted-foreground border-border bg-muted/50'
     }
   }
   switch (run.conclusion) {
     case 'success':
-      return { icon: <CheckCircle2 className="h-4 w-4 text-[#3fb950] shrink-0" />, badge: 'sucesso', badgeCls: 'text-[#3fb950] border-[#3fb950]/25 bg-[#3fb950]/10' }
+      return { icon: <CheckCircle2 className="h-4 w-4 text-[#3fb950] shrink-0" />, badge: t('workspace.status.success', 'success'), badgeCls: 'text-[#3fb950] border-[#3fb950]/25 bg-[#3fb950]/10' }
     case 'failure':
-      return { icon: <XCircle className="h-4 w-4 text-[#f85149] shrink-0" />, badge: 'falhou', badgeCls: 'text-[#f85149] border-[#f85149]/25 bg-[#f85149]/10' }
+      return { icon: <XCircle className="h-4 w-4 text-[#f85149] shrink-0" />, badge: t('workspace.status.failed', 'failed'), badgeCls: 'text-[#f85149] border-[#f85149]/25 bg-[#f85149]/10' }
     case 'cancelled':
-      return { icon: <AlertCircle className="h-4 w-4 text-[#d29922] shrink-0" />, badge: 'cancelado', badgeCls: 'text-[#d29922] border-[#d29922]/25 bg-[#d29922]/10' }
+      return { icon: <AlertCircle className="h-4 w-4 text-[#d29922] shrink-0" />, badge: t('workspace.status.cancelled', 'cancelled'), badgeCls: 'text-[#d29922] border-[#d29922]/25 bg-[#d29922]/10' }
     case 'timed_out':
-      return { icon: <XCircle className="h-4 w-4 text-[#f85149] shrink-0" />, badge: 'timeout', badgeCls: 'text-[#f85149] border-[#f85149]/25 bg-[#f85149]/10' }
+      return { icon: <XCircle className="h-4 w-4 text-[#f85149] shrink-0" />, badge: t('workspace.status.timed_out', 'timed out'), badgeCls: 'text-[#f85149] border-[#f85149]/25 bg-[#f85149]/10' }
     case 'skipped':
-      return { icon: <Circle className="h-4 w-4 text-muted-foreground shrink-0" />, badge: 'ignorado', badgeCls: 'text-muted-foreground border-border bg-muted/50' }
+      return { icon: <Circle className="h-4 w-4 text-muted-foreground shrink-0" />, badge: t('workspace.status.skipped', 'skipped'), badgeCls: 'text-muted-foreground border-border bg-muted/50' }
     default:
-      return { icon: <Circle className="h-4 w-4 text-muted-foreground shrink-0" />, badge: run.conclusion ?? 'neutro', badgeCls: 'text-muted-foreground border-border bg-muted/50' }
+      return { icon: <Circle className="h-4 w-4 text-muted-foreground shrink-0" />, badge: run.conclusion ?? t('workspace.status.neutral', 'neutral'), badgeCls: 'text-muted-foreground border-border bg-muted/50' }
   }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
 export function RepoActions(): JSX.Element {
+  const { t } = useTranslation()
   const { repoId } = useRepoDetail()
   const navigate = useNavigate()
   const { runs, setRuns } = useRunsStore()
@@ -106,6 +101,13 @@ export function RepoActions(): JSX.Element {
   const [ghHasMore, setGhHasMore] = useState(true)
 
   const [detailRun, setDetailRun] = useState<{ source: 'orbit' | 'github'; run: Run | GitHubRun } | null>(null)
+
+  const SOURCE_LABELS: Record<SourceFilter, string> = {
+    all: t('workspace.status.all', 'All'), orbit: t('workspace.sections.orbit_ci', 'OrbitCI'), github: t('common.github_actions', 'GitHub Actions')
+  }
+  const STATUS_LABELS: Record<StatusFilter, string> = {
+    all: t('workspace.status.all', 'All'), success: t('workspace.status.success', 'Success'), failure: t('workspace.status.failure', 'Failure'), running: t('workspace.status.running', 'Running'), cancelled: t('workspace.status.cancelled', 'Cancelled')
+  }
 
   // ── Load data ────────────────────────────────────────────────────────────
   const loadOrbitRuns = useCallback(async () => {
@@ -199,7 +201,7 @@ export function RepoActions(): JSX.Element {
             disabled={isLoading}
           >
             <RefreshCw className={cn('h-3.5 w-3.5', isLoading && 'animate-spin')} />
-            Atualizar
+            {t('common.refresh', 'Refresh')}
           </Button>
         </div>
       </div>
@@ -209,14 +211,14 @@ export function RepoActions(): JSX.Element {
         {isLoading && unifiedRuns.length === 0 ? (
           <div className="flex items-center justify-center py-20 gap-2 text-muted-foreground">
             <Loader2 className="h-5 w-5 animate-spin" />
-            <span className="text-[13px]">Carregando runs...</span>
+            <span className="text-[13px]">{t('workspace.runs.loading_runs', 'Loading runs...')}</span>
           </div>
         ) : unifiedRuns.length === 0 ? (
           <EmptyState
             icon={Inbox}
-            title="Nenhuma execução encontrada"
-            description="Ajuste os filtros ou execute um workflow"
-            action={{ label: 'Atualizar', onClick: handleRefresh }}
+            title={t('workspace.runs.no_runs_found', 'No runs found')}
+            description={t('workspace.runs.filter_no_results', 'Adjust filters or run a workflow')}
+            action={{ label: t('common.refresh', 'Refresh'), onClick: handleRefresh }}
           />
         ) : (
           <>
@@ -251,7 +253,7 @@ export function RepoActions(): JSX.Element {
                     onClick={() => loadGhRuns(false)}
                   >
                     <ChevronDown className="h-3.5 w-3.5" />
-                    Carregar mais do GitHub
+                    {t('workspace.runs.load_more_gh', 'Load more from GitHub')}
                   </Button>
                 )}
               </div>
@@ -259,7 +261,7 @@ export function RepoActions(): JSX.Element {
 
             {/* Footer count */}
             <div className="text-center py-3 text-[11px] text-muted-foreground/50">
-              {unifiedRuns.length} execuções exibidas
+              {t('workspace.runs.runs_displayed_count', { count: unifiedRuns.length, defaultValue: '{{count}} executions displayed' })}
             </div>
           </>
         )}
@@ -319,7 +321,8 @@ function OrbitRunRow({ run, onClick }: { run: Run; onClick: () => void }): JSX.E
 
 // ─── GitHub Actions Run row ──────────────────────────────────────────────────
 function GhRunRow({ run, onClick }: { run: GitHubRun; onClick: () => void }): JSX.Element {
-  const { icon, badge, badgeCls } = ghRunVisual(run)
+  const { t } = useTranslation()
+  const { icon, badge, badgeCls } = ghRunVisual(run, t)
   const workflowFile = run.workflowPath.split('/').pop() ?? run.workflowPath
 
   return (
@@ -360,7 +363,7 @@ function GhRunRow({ run, onClick }: { run: GitHubRun; onClick: () => void }): JS
       <button
         onClick={(e) => { e.stopPropagation(); electron.shell.openExternal(run.htmlUrl) }}
         className="shrink-0 h-7 w-7 flex items-center justify-center rounded hover:bg-muted transition-colors opacity-0 group-hover:opacity-100"
-        title="Abrir no GitHub"
+        title={t('common.view_github', 'View on GitHub')}
       >
         <ExternalLink className="h-3.5 w-3.5 text-muted-foreground" />
       </button>

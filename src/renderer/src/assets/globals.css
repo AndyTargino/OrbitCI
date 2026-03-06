@@ -4,56 +4,43 @@
 
 @layer base {
   :root {
-    /* ── OrbitCI Design System ─────────────────────────────────────────────────
-       Cool-tinted blacks (hue 220, low saturation) for visual depth.
-       Primary accent = white. Subtle blue undertone on surfaces.
-    */
+    --background: 0 0% 3.9%;
+    --foreground: 0 0% 98%;
 
-    /* Canvas / main surfaces */
-    --background: 220 10% 4%;            /* #090b0d — subtle blue undertone */
-    --foreground: 220 5% 91%;            /* #e7e8ea */
+    --card: 0 0% 5.5%;
+    --card-foreground: 0 0% 98%;
 
-    --card: 220 10% 6.5%;               /* #0f1114 */
-    --card-foreground: 220 5% 91%;
+    --popover: 0 0% 6%;
+    --popover-foreground: 0 0% 98%;
 
-    --popover: 220 10% 5.5%;            /* #0d0e11 */
-    --popover-foreground: 220 5% 91%;
+    --primary: 0 0% 98%;
+    --primary-foreground: 0 0% 9%;
 
-    /* Primary = white — clean contrast on black */
-    --primary: 220 5% 93%;              /* #ededef */
-    --primary-foreground: 220 10% 5%;   /* #0c0d0f */
+    --secondary: 0 0% 11%;
+    --secondary-foreground: 0 0% 98%;
 
-    /* Secondary containers */
-    --secondary: 220 8% 12%;            /* #1b1d21 */
-    --secondary-foreground: 220 5% 82%;
+    --muted: 0 0% 9%;
+    --muted-foreground: 0 0% 45%;
 
-    /* Muted surfaces & text */
-    --muted: 220 8% 10%;               /* #171921 */
-    --muted-foreground: 220 5% 48%;    /* slightly brighter for readability */
+    --accent: 0 0% 12%;
+    --accent-foreground: 0 0% 98%;
 
-    /* Accent hover */
-    --accent: 220 10% 13%;             /* #1e2027 */
-    --accent-foreground: 220 5% 91%;
+    --destructive: 0 62.8% 50%;
+    --destructive-foreground: 0 0% 98%;
 
-    /* Destructive */
-    --destructive: 0 68% 54%;
-    --destructive-foreground: 0 0% 100%;
-
-    /* Borders & inputs */
-    --border: 220 8% 17%;              /* #292b31 — more visible */
-    --input: 220 8% 12%;
-    --ring: 220 10% 55%;               /* blue-grey focus ring */
+    --border: 0 0% 14.5%;
+    --input: 0 0% 14.5%;
+    --ring: 0 0% 62%;
     --radius: 0.375rem;
 
-    /* Sidebar — deepest */
-    --sidebar-background: 220 12% 3.5%; /* #070810 */
-    --sidebar-foreground: 220 5% 65%;
-    --sidebar-primary: 220 5% 93%;
-    --sidebar-primary-foreground: 220 10% 5%;
-    --sidebar-accent: 220 10% 11%;
-    --sidebar-accent-foreground: 220 5% 88%;
-    --sidebar-border: 220 8% 11%;
-    --sidebar-ring: 220 10% 55%;
+    --sidebar-background: 0 0% 3%;
+    --sidebar-foreground: 0 0% 55%;
+    --sidebar-primary: 0 0% 98%;
+    --sidebar-primary-foreground: 0 0% 9%;
+    --sidebar-accent: 0 0% 10%;
+    --sidebar-accent-foreground: 0 0% 88%;
+    --sidebar-border: 0 0% 12%;
+    --sidebar-ring: 0 0% 62%;
   }
 }
 
@@ -69,15 +56,14 @@
 
   body {
     @apply bg-background text-foreground;
-    font-size: 14px;
+    font-size: 13px;
     line-height: 1.5;
     font-feature-settings: "rlig" 1, "calt" 1;
   }
 
-  /* Thin scrollbar */
   ::-webkit-scrollbar {
-    width: 4px;
-    height: 4px;
+    width: 6px;
+    height: 6px;
   }
 
   ::-webkit-scrollbar-track {
@@ -90,25 +76,21 @@
   }
 
   ::-webkit-scrollbar-thumb:hover {
-    background: hsl(var(--muted-foreground) / 0.5);
+    background: hsl(var(--muted-foreground) / 0.4);
   }
 
-  /* Selection */
   ::selection {
-    background: hsl(220 10% 92% / 0.15);
+    background: hsl(0 0% 98% / 0.1);
   }
 
-  /* Disable Electron drag */
   * {
     -webkit-user-drag: none;
   }
 
-  /* Allow text selection where it makes sense */
   p, span, h1, h2, h3, h4, h5, h6, pre, code, td, th {
     user-select: text;
   }
 
-  /* Titlebar drag region */
   .titlebar-drag {
     -webkit-app-region: drag;
   }
@@ -117,38 +99,26 @@
     -webkit-app-region: no-drag;
   }
 
-  /* Focus ring — grey glow */
   :focus-visible {
-    outline: 2px solid hsl(var(--ring) / 0.6);
+    outline: 2px solid hsl(var(--ring) / 0.4);
     outline-offset: 2px;
   }
 }
 
 @layer utilities {
-  /* ── Status colours — kept coloured for semantic meaning ────────────────── */
-  .status-success   { @apply text-[#3fb950]; }
-  .status-failure   { @apply text-[#f85149]; }
-  .status-running   { @apply text-[#58a6ff]; }
-  .status-pending   { @apply text-[#8b949e]; }
-  .status-cancelled { @apply text-[#d29922]; }
+  .status-success { color: #4ade80; }
+  .status-failure { color: #f87171; }
+  .status-running { color: #60a5fa; }
+  .status-pending { color: #71717a; }
+  .status-cancelled { color: #a1a1aa; }
 
-  /* ── Log line styles ────────────────────────────────────────────────────── */
-  .log-line    { @apply font-mono text-[12px] leading-relaxed tracking-tight; }
-  .log-info    { @apply text-[#c9d1d9]; }
-  .log-output  { @apply text-[#e6edf3]; }
-  .log-error   { @apply text-[#f85149]; }
-  .log-success { @apply text-[#3fb950]; }
-  .log-warning { @apply text-[#d29922]; }
-  .log-step    { @apply text-[#c0c0c0] font-medium; }
-  .log-job     { @apply text-[#e0e0e0] font-semibold; }
-  .log-skip    { @apply text-[#484f58]; }
-
-  /* ── GitHub-style list row ──────────────────────────────────────────────── */
-  .gh-row {
-    @apply flex items-center gap-3 border-b border-border px-4 py-3
-           hover:bg-accent/60 transition-colors;
-  }
-  .gh-row:last-child {
-    @apply border-b-0;
-  }
+  .log-line { @apply font-mono text-[12px] leading-relaxed tracking-tight; }
+  .log-info { color: #a1a1aa; }
+  .log-output { color: #e5e5e5; }
+  .log-error { color: #f87171; }
+  .log-success { color: #4ade80; }
+  .log-warning { color: #facc15; }
+  .log-step { color: #d4d4d4; font-weight: 500; }
+  .log-job { color: #e5e5e5; font-weight: 600; }
+  .log-skip { color: #52525b; }
 }

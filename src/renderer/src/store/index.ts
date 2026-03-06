@@ -53,7 +53,7 @@ interface RepoState {
 
 export const useRepoStore = create<RepoState>((set) => ({
   repos: [],
-  selectedRepoId: null,
+  selectedRepoId: localStorage.getItem('orbitci:lastRepo') ?? null,
   isLoading: false,
   syncEvents: {},
   gitSummaries: {},
@@ -68,7 +68,11 @@ export const useRepoStore = create<RepoState>((set) => ({
       repos: s.repos.filter((r) => r.id !== id),
       selectedRepoId: s.selectedRepoId === id ? null : s.selectedRepoId
     })),
-  selectRepo: (id) => set({ selectedRepoId: id }),
+  selectRepo: (id) => {
+    if (id) localStorage.setItem('orbitci:lastRepo', id)
+    else localStorage.removeItem('orbitci:lastRepo')
+    set({ selectedRepoId: id })
+  },
   setLoading: (isLoading) => set({ isLoading }),
   addSyncEvent: (event) =>
     set((s) => ({ syncEvents: { ...s.syncEvents, [event.repoId]: event } })),

@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import {
   Key, Loader2, ExternalLink, CheckCircle2, Github, Save, Copy, ArrowRight
 } from 'lucide-react'
 import { electron } from '@/lib/electron'
-import orbitIcon from '@/assets/icon.png'
+import orbitIcon from '@/assets/icon_dark.png'
 import { useAuthStore, useRepoStore, useSettingsStore } from '@/store'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -18,6 +19,7 @@ import type { GitHubUser } from '@shared/types'
 type Tab = 'github' | 'token'
 
 export function Login(): JSX.Element {
+  const { t, i18n } = useTranslation()
   const navigate = useNavigate()
   const { setUser } = useAuthStore()
   const { setRepos } = useRepoStore()
@@ -63,17 +65,17 @@ export function Login(): JSX.Element {
             setRepos(repos)
             setSettings(settings)
           } catch { /* continue anyway */ }
-          notify('success', 'Login realizado!', `Bem-vindo, ${result.user.name ?? result.user.login}`)
+          notify('success', t('login.notifications.login_success'), t('login.notifications.welcome', { name: result.user.name ?? result.user.login }))
           navigate('/')
         } else {
-          notify('failure', 'Erro no login OAuth', result.error ?? 'Erro desconhecido')
+          notify('failure', t('login.notifications.oauth_error'), result.error ?? t('common.error_unknown'))
         }
         setIsWaitingOAuth(false)
       }
     )
 
     return unsub
-  }, [navigate, setUser, setRepos, setSettings])
+  }, [navigate, setUser, setRepos, setSettings, t])
 
   // PAT login
   const handleTokenLogin = async () => {
@@ -90,8 +92,8 @@ export function Login(): JSX.Element {
       setSettings(settings)
       navigate('/')
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Token inválido ou sem permissões'
-      notify('failure', 'Erro de autenticação', msg)
+      const msg = err instanceof Error ? err.message : t('login.notifications.invalid_token')
+      notify('failure', t('login.notifications.auth_error'), msg)
     } finally {
       setIsLoading(false)
     }
@@ -107,9 +109,9 @@ export function Login(): JSX.Element {
         githubClientSecret: clientSecret.trim()
       })
       setHasOAuthCreds(true)
-      notify('success', 'Credenciais salvas!', 'Agora clique em "Login com GitHub"')
+      notify('success', t('login.notifications.creds_saved'), t('login.notifications.click_login'))
     } catch (err: unknown) {
-      notify('failure', 'Erro ao salvar', err instanceof Error ? err.message : 'Erro')
+      notify('failure', t('login.notifications.save_error'), err instanceof Error ? err.message : t('common.error'))
     } finally {
       setIsSavingCreds(false)
     }
@@ -121,14 +123,14 @@ export function Login(): JSX.Element {
     try {
       await electron.auth.githubOAuthStart(clientId, clientSecret)
     } catch (err: unknown) {
-      notify('failure', 'Erro ao iniciar OAuth', err instanceof Error ? err.message : 'Erro')
+      notify('failure', t('login.notifications.oauth_start_error'), err instanceof Error ? err.message : t('common.error'))
       setIsWaitingOAuth(false)
     }
   }
 
   const handleCopyCallback = () => {
     navigator.clipboard.writeText('orbitci://callback')
-    notify('success', 'Copiado!', 'orbitci://callback')
+    notify('success', t('common.copied'), 'orbitci://callback')
   }
 
   const scopes = ['repo', 'workflow', 'read:user', 'user:email']
@@ -154,7 +156,7 @@ export function Login(): JSX.Element {
           <div className="text-center">
             <h1 className="text-[26px] font-bold tracking-tight">OrbitCI</h1>
             <p className="text-muted-foreground mt-1 text-[13px]">
-              GitHub Actions runner local com interface gráfica
+              {t('login.brand_subtitle', 'Local GitHub Actions runner with desktop GUI')}
             </p>
           </div>
         </div>
@@ -163,7 +165,7 @@ export function Login(): JSX.Element {
         <div className="flex items-center gap-1 mb-3 bg-card/50 rounded-lg p-1 border border-border/50">
           {([
             { key: 'github' as Tab, label: 'GitHub', icon: Github },
-            { key: 'token' as Tab, label: 'Token (PAT)', icon: Key }
+            { key: 'token' as Tab, label: t('login.tabs.token', 'Token (PAT)'), icon: Key }
           ]).map(({ key, label, icon: Icon }) => (
             <button
               key={key}
@@ -187,10 +189,10 @@ export function Login(): JSX.Element {
             <CardHeader className="pb-4">
               <CardTitle className="flex items-center gap-2 text-[15px]">
                 <Github className="h-4 w-4 text-primary" />
-                Login com GitHub
+                {t('login.oauth.title', 'Login with GitHub')}
               </CardTitle>
               <CardDescription className="text-[13px]">
-                Autorize via navegador — sem precisar copiar tokens
+                {t('login.oauth.description', 'Authorize via browser — no token copying needed')}
               </CardDescription>
             </CardHeader>
 
@@ -206,9 +208,9 @@ export function Login(): JSX.Element {
                     <div className="text-center py-4 space-y-3">
                       <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto" />
                       <div>
-                        <p className="text-[13px] font-medium">Aguardando autorização...</p>
+                        <p className="text-[13px] font-medium">{t('login.oauth.waiting', 'Waiting for authorization...')}</p>
                         <p className="text-[12px] text-muted-foreground mt-1">
-                          Complete a autorização no navegador
+                          {t('login.oauth.complete_help', 'Complete authorization in your browser')}
                         </p>
                       </div>
                       <Button
@@ -217,7 +219,7 @@ export function Login(): JSX.Element {
                         className="text-[12px]"
                         onClick={() => setIsWaitingOAuth(false)}
                       >
-                        Cancelar
+                        {t('common.cancel', 'Cancel')}
                       </Button>
                     </div>
                   ) : (
@@ -227,18 +229,18 @@ export function Login(): JSX.Element {
                         onClick={handleOAuthLogin}
                       >
                         <Github className="h-4.5 w-4.5" />
-                        Login com GitHub
+                        {t('login.oauth.login_btn', 'Login with GitHub')}
                       </Button>
 
                       {/* Scopes info */}
                       <div className="rounded-md border border-border/50 bg-muted/30 p-3 space-y-2">
                         <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
-                          Permissões solicitadas
+                          {t('login.oauth.permissions', 'Requested permissions')}
                         </p>
                         <div className="grid grid-cols-2 gap-1.5">
                           {scopes.map((scope) => (
                             <div key={scope} className="flex items-center gap-1.5 text-[12px] text-muted-foreground">
-                              <CheckCircle2 className="h-3 w-3 text-[#3fb950] shrink-0" />
+                              <CheckCircle2 className="h-3 w-3 text-[#4ade80] shrink-0" />
                               <code className="text-foreground">{scope}</code>
                             </div>
                           ))}
@@ -249,7 +251,7 @@ export function Login(): JSX.Element {
                         onClick={() => setHasOAuthCreds(false)}
                         className="text-[11px] text-muted-foreground hover:text-foreground transition-colors"
                       >
-                        Alterar credenciais OAuth
+                        {t('login.oauth.change_creds', 'Change OAuth credentials')}
                       </button>
                     </>
                   )}
@@ -258,9 +260,9 @@ export function Login(): JSX.Element {
                 /* No OAuth credentials — show setup form */
                 <div className="space-y-4">
                   <div className="rounded-md border border-primary/20 bg-primary/5 p-3 space-y-2">
-                    <p className="text-[13px] font-medium text-foreground">Configuração inicial</p>
+                    <p className="text-[13px] font-medium text-foreground">{t('login.setup.title', 'Initial Setup')}</p>
                     <p className="text-[12px] text-muted-foreground leading-relaxed">
-                      Crie um OAuth App no GitHub para habilitar o login. Só precisa fazer isso uma vez.
+                      {t('login.setup.description', 'Create an OAuth App on GitHub to enable login. You only need to do this once.')}
                     </p>
                     <a
                       href="https://github.com/settings/developers"
@@ -269,7 +271,7 @@ export function Login(): JSX.Element {
                       className="inline-flex items-center gap-1.5 text-[12px] text-primary hover:underline font-medium"
                     >
                       <ExternalLink className="h-3 w-3" />
-                      Abrir GitHub Developer Settings
+                      {t('login.setup.open_settings', 'Open GitHub Developer Settings')}
                     </a>
                   </div>
 
@@ -278,14 +280,14 @@ export function Login(): JSX.Element {
                     <div className="flex gap-2">
                       <span className="shrink-0 h-5 w-5 rounded-full bg-primary/15 text-primary text-[11px] font-bold flex items-center justify-center">1</span>
                       <span className="text-muted-foreground pt-0.5">
-                        Clique em <strong className="text-foreground">New OAuth App</strong>
+                        {t('login.setup.step1', { strong: 'New OAuth App', defaultValue: 'Click on <strong>New OAuth App</strong>' })}
                       </span>
                     </div>
                     <div className="flex gap-2">
                       <span className="shrink-0 h-5 w-5 rounded-full bg-primary/15 text-primary text-[11px] font-bold flex items-center justify-center">2</span>
                       <div className="pt-0.5">
                         <span className="text-muted-foreground">
-                          Em <strong className="text-foreground">Authorization callback URL</strong>, cole:
+                          {t('login.setup.step2', { strong: 'Authorization callback URL', defaultValue: 'In <strong>Authorization callback URL</strong>, paste:' })}
                         </span>
                         <button
                           onClick={handleCopyCallback}
@@ -299,14 +301,14 @@ export function Login(): JSX.Element {
                     <div className="flex gap-2">
                       <span className="shrink-0 h-5 w-5 rounded-full bg-primary/15 text-primary text-[11px] font-bold flex items-center justify-center">3</span>
                       <span className="text-muted-foreground pt-0.5">
-                        Copie o <strong className="text-foreground">Client ID</strong> e <strong className="text-foreground">Client Secret</strong> abaixo
+                        {t('login.setup.step3', { strong1: 'Client ID', strong2: 'Client Secret', defaultValue: 'Copy <strong>Client ID</strong> and <strong>Client Secret</strong> below' })}
                       </span>
                     </div>
                   </div>
 
                   <div className="space-y-3 pt-1">
                     <div className="space-y-1.5">
-                      <Label className="text-[12px]">Client ID</Label>
+                      <Label className="text-[12px]">{t('settings.oauth.client_id', 'Client ID')}</Label>
                       <Input
                         placeholder="Ov23liXXXXXXXXXXXXXX"
                         value={clientId}
@@ -315,7 +317,7 @@ export function Login(): JSX.Element {
                       />
                     </div>
                     <div className="space-y-1.5">
-                      <Label className="text-[12px]">Client Secret</Label>
+                      <Label className="text-[12px]">{t('settings.oauth.client_secret', 'Client Secret')}</Label>
                       <Input
                         type="password"
                         placeholder="••••••••••••••••••••••••••••••••••••••••"
@@ -337,9 +339,9 @@ export function Login(): JSX.Element {
                   disabled={!clientId.trim() || !clientSecret.trim() || isSavingCreds}
                 >
                   {isSavingCreds ? (
-                    <><Loader2 className="h-4 w-4 animate-spin" /> Salvando...</>
+                    <><Loader2 className="h-4 w-4 animate-spin" /> {t('common.saving', 'Saving...')}</>
                   ) : (
-                    <><ArrowRight className="h-4 w-4" /> Salvar e continuar</>
+                    <><ArrowRight className="h-4 w-4" /> {t('login.setup.save_continue', 'Save and continue')}</>
                   )}
                 </Button>
               </CardFooter>
@@ -353,16 +355,16 @@ export function Login(): JSX.Element {
             <CardHeader className="pb-4">
               <CardTitle className="flex items-center gap-2 text-[15px]">
                 <Key className="h-4 w-4 text-primary" />
-                Personal Access Token
+                {t('login.pat.title', 'Personal Access Token')}
               </CardTitle>
               <CardDescription className="text-[13px]">
-                Entre com um PAT do GitHub para usar o OrbitCI
+                {t('login.pat.description', 'Enter a GitHub PAT to use OrbitCI')}
               </CardDescription>
             </CardHeader>
 
             <CardContent className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="token" className="text-[13px]">Token</Label>
+                <Label htmlFor="token" className="text-[13px]">{t('login.pat.token_label', 'Token')}</Label>
                 <Input
                   id="token"
                   type="password"
@@ -378,12 +380,12 @@ export function Login(): JSX.Element {
               {/* Required scopes */}
               <div className="rounded-md border border-border/50 bg-muted/30 p-3 space-y-2">
                 <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
-                  Escopos necessários
+                  {t('login.pat.scopes_label', 'Required scopes')}
                 </p>
                 <div className="grid grid-cols-2 gap-1.5">
                   {scopes.map((scope) => (
                     <div key={scope} className="flex items-center gap-1.5 text-[12px] text-muted-foreground">
-                      <CheckCircle2 className="h-3 w-3 text-[#3fb950] shrink-0" />
+                      <CheckCircle2 className="h-3 w-3 text-[#4ade80] shrink-0" />
                       <code className="text-foreground">{scope}</code>
                     </div>
                   ))}
@@ -398,9 +400,9 @@ export function Login(): JSX.Element {
                 disabled={!token.trim() || isLoading}
               >
                 {isLoading ? (
-                  <><Loader2 className="h-4 w-4 animate-spin" /> Autenticando...</>
+                  <><Loader2 className="h-4 w-4 animate-spin" /> {t('login.pat.authenticating', 'Authenticating...')}</>
                 ) : (
-                  <><Key className="h-4 w-4" /> Entrar com Token</>
+                  <><Key className="h-4 w-4" /> {t('login.pat.login_btn', 'Login with Token')}</>
                 )}
               </Button>
 
@@ -411,11 +413,34 @@ export function Login(): JSX.Element {
                 className="flex items-center gap-1.5 text-[12px] text-muted-foreground hover:text-primary transition-colors"
               >
                 <ExternalLink className="h-3 w-3" />
-                Criar novo token no GitHub
+                {t('login.pat.create_token', 'Create new token on GitHub')}
               </a>
             </CardFooter>
           </Card>
         )}
+
+        {/* Language switcher */}
+        <div className="flex items-center justify-center gap-2 mt-6 text-[12px]">
+          <button
+            onClick={() => { i18n.changeLanguage('en'); electron.settings.update({ language: 'en' }) }}
+            className={cn(
+              'transition-colors',
+              i18n.language === 'en' ? 'text-foreground font-medium' : 'text-muted-foreground hover:text-foreground'
+            )}
+          >
+            English
+          </button>
+          <span className="text-muted-foreground/40">·</span>
+          <button
+            onClick={() => { i18n.changeLanguage('pt'); electron.settings.update({ language: 'pt' }) }}
+            className={cn(
+              'transition-colors',
+              i18n.language === 'pt' ? 'text-foreground font-medium' : 'text-muted-foreground hover:text-foreground'
+            )}
+          >
+            Português
+          </button>
+        </div>
       </div>
     </div>
   )

@@ -77,14 +77,18 @@ async function syncRepo(repoId: string): Promise<void> {
     if (!remoteSha) return
 
     const now = new Date().toISOString()
-    notifySyncEvent(repoId, 'check', `Verificando ${repoId}...`)
+    notifySyncEvent(repoId, 'check', { messageKey: 'workspace.sync.checking', messageArgs: { repoId } })
 
     await db.update(repos).set({ lastSyncAt: now }).where(eq(repos.id, repoId))
 
     if (remoteSha === repo.lastRemoteSha) return
 
     // 2. New commit detected
-    notifySyncEvent(repoId, 'new-commit', `Novo commit detectado: ${remoteSha.slice(0, 7)}`, remoteSha)
+    notifySyncEvent(repoId, 'new-commit', { 
+      messageKey: 'workspace.sync.new_commit', 
+      messageArgs: { sha: remoteSha.slice(0, 7) },
+      sha: remoteSha 
+    })
 
     // 3. Pull changes
     const git = simpleGit(repo.localPath)
@@ -97,7 +101,11 @@ async function syncRepo(repoId: string): Promise<void> {
       .set({ lastRemoteSha: remoteSha, lastSyncAt: now })
       .where(eq(repos.id, repoId))
 
-    notifySyncEvent(repoId, 'pull', `Pull realizado — ${remoteSha.slice(0, 7)}`, remoteSha)
+    notifySyncEvent(repoId, 'pull', { 
+      messageKey: 'workspace.sync.pull_done', 
+      messageArgs: { sha: remoteSha.slice(0, 7) },
+      sha: remoteSha 
+    })
 
     // 5. Trigger workflows if autoRun
     if (repo.autoRun && runner) {
@@ -113,29 +121,21 @@ async function syncRepo(repoId: string): Promise<void> {
       try {
         const latestRelease = await getLatestRelease(owner, repoName)
         if (latestRelease && latestRelease.tag_name !== repo.lastReleaseTag) {
-          notifySyncEvent(repoId, 'new-release', `Nova release detectada: ${latestRelease.tag_name}`)
-
-          await db.update(repos).set({ lastReleaseTag: latestRelease.tag_name }).where(eq(repos.id, repoId))
-
-          await runner.triggerEvent(repoId, 'release', {
-            branch,
-            sha: remoteSha,
-            release: {
-              tag_name: latestRelease.tag_name,
-              name: latestRelease.name,
-              body: latestRelease.body,
-              draft: latestRelease.draft,
-              prerelease: latestRelease.prerelease,
-              html_url: latestRelease.html_url,
-              id: latestRelease.id
-            }
+          notifySyncEvent(repoId, 'new-release', {
+            messageKey: 'workspace.sync.new_release',
+            messageArgs: { tag: latestRelease.tag_name }
           })
         }
-      } catch { /* release check is non-critical */ }
+      } catch {
+        // silently ignore release check failures
+      }
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    notifySyncEvent(repoId, 'error', `Erro ao sincronizar: ${msg}`)
+    notifySyncEvent(repoId, 'error', { 
+      messageKey: 'workspace.sync.error', 
+      messageArgs: { msg } 
+    })
   } finally {
     syncing.delete(repoId)
   }

@@ -202,17 +202,16 @@ export async function listWorkflowRuns(
   status?: string
 ): Promise<GitHubRun[]> {
   const kit = getOctokit()
-  const params: Parameters<typeof kit.actions.listWorkflowRunsForRepo>[0] = {
+  const params: Record<string, unknown> = {
     owner,
     repo,
     per_page: perPage,
     page
   }
   if (status && status !== 'all') {
-    // GitHub API accepts status/conclusion values directly
-    params.status = status as Parameters<typeof kit.actions.listWorkflowRunsForRepo>[0]['status']
+    params.status = status
   }
-  const { data } = await kit.actions.listWorkflowRunsForRepo(params)
+  const { data } = await kit.actions.listWorkflowRunsForRepo(params as Parameters<typeof kit.actions.listWorkflowRunsForRepo>[0])
   return data.workflow_runs.map((r) => ({
     id: r.id,
     name: r.name ?? null,

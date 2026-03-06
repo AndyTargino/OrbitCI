@@ -14,9 +14,11 @@ export function sendToRenderer(channel: string, ...args: unknown[]): void {
 export function notifyRunStart(runId: string, workflowName: string, repoId: string): void {
   sendToRenderer(IPC_CHANNELS.EVENT_RUN_STATUS, { runId, status: 'running' })
 
+  // We send keys to renderer for desktop notifications if we want to translate them perfectly,
+  // but for now let's just make the main process strings English by default.
   showNotification({
     title: workflowName,
-    body: `Iniciando execução em ${repoId}`,
+    body: `Starting run in ${repoId}`,
     type: 'running',
     duration: 3000
   })
@@ -33,19 +35,19 @@ export function notifyRunComplete(
   if (status === 'success') {
     showNotification({
       title: workflowName,
-      body: `Concluído com sucesso em ${repoId}`,
+      body: `Successfully completed in ${repoId}`,
       type: 'success',
       duration: 6000
     })
   } else {
     showNotification({
       title: workflowName,
-      body: `Falha na execução em ${repoId}`,
+      body: `Run failed in ${repoId}`,
       type: 'failure',
       duration: 0,
       actions: [
-        { id: 'view-logs', label: 'Ver logs', primary: true },
-        { id: 'close', label: 'Fechar' }
+        { id: 'view-logs', label: 'View logs', primary: true },
+        { id: 'close', label: 'Close' }
       ],
       onAction: (actionId) => {
         if (actionId === 'view-logs') {
@@ -59,22 +61,22 @@ export function notifyRunComplete(
 export function notifySyncEvent(
   repoId: string,
   type: string,
-  message: string,
-  sha?: string
+  payload: { messageKey: string; messageArgs?: Record<string, any>; sha?: string }
 ): void {
-  sendToRenderer(IPC_CHANNELS.EVENT_SYNC, { repoId, type, message, sha })
+  sendToRenderer(IPC_CHANNELS.EVENT_SYNC, { repoId, type, ...payload })
 
+  // Simplified desktop notification labels
   if (type === 'new-commit') {
     showNotification({
-      title: 'Novo commit detectado',
-      body: message,
+      title: 'New commit detected',
+      body: `${repoId}: ${payload.messageArgs?.sha || ''}`,
       type: 'info',
       duration: 4000
     })
   } else if (type === 'error') {
     showNotification({
-      title: 'Erro de sincronização',
-      body: message,
+      title: 'Sync error',
+      body: payload.messageArgs?.msg || '',
       type: 'warning',
       duration: 6000
     })

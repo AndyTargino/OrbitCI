@@ -7,7 +7,7 @@ import { listUserRepos } from '../services/githubService'
 import { cloneRepo } from '../git/gitEngine'
 import { loadToken } from '../services/credentialService'
 import { scheduleSync, unscheduleSync } from '../services/syncService'
-import { existsSync, mkdirSync, readdirSync, copyFileSync, rmSync } from 'fs'
+import { existsSync, mkdirSync, readdirSync, copyFileSync, rmSync, readFileSync } from 'fs'
 import { join } from 'path'
 import { homedir } from 'os'
 import type { Repo } from '@shared/types'
@@ -286,7 +286,11 @@ export function registerRepoHandlers(): void {
       if (!existsSync(githubDir)) return []
       return readdirSync(githubDir)
         .filter((f) => f.endsWith('.yml') || f.endsWith('.yaml'))
-        .map((f) => ({ file: f, path: join(githubDir, f) }))
+        .map((f) => ({
+          file: f,
+          path: join(githubDir, f),
+          content: readFileSync(join(githubDir, f), 'utf-8')
+        }))
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       throw new Error(`Erro ao listar workflows do GitHub: ${msg}`)
@@ -314,6 +318,48 @@ export function registerRepoHandlers(): void {
         }
 
         return { success: true, count: files.length, files }
+      } catch (err) {
+        if (err instanceof Error && (err.message.includes('não encontrad') || err.message.includes('Nenhum arquivo'))) throw err
+        const msg = err instanceof Error ? err.message : String(err)
+        throw new Error(`Erro ao importar workflows: ${msg}`)
+      }
+    }
+  )
+
+  // ─── Read a single .github/workflows/ file content ─────────────────────────
+  ipcMain.handle(IPC_CHANNELS.REPOS_GET_GITHUB_WORKFLOW_CONTENT, async (_, localPath: string, file: string) => {
+    try {
+      const filePath = join(localPath, GITHUB_WORKFLOWS_DIR, file)
+      if (!existsSync(filePath)) throw new Error(`Arquivo "${file}" não encontrado em .github/workflows/.`)
+      return readFileSync(filePath, 'utf-8')
+    } catch (err) {
+      if (err instanceof Error && err.message.includes('não encontrad')) throw err
+      const msg = err instanceof Error ? err.message : String(err)
+      throw new Error(`Erro ao ler workflow do GitHub: ${msg}`)
+    }
+  })
+
+  // ─── Import selected workflow files from .github/workflows/ to .orbit/workflows/ ─
+  ipcMain.handle(
+    IPC_CHANNELS.REPOS_IMPORT_GITHUB_WORKFLOWS_SELECTIVE,
+    async (_, localPath: string, selectedFiles: string[]) => {
+      try {
+        const githubDir = join(localPath, GITHUB_WORKFLOWS_DIR)
+        const orbitDir = join(localPath, WORKFLOWS_DIR)
+
+        if (!existsSync(githubDir)) throw new Error('Pasta .github/workflows/ não encontrada neste repositório.')
+        if (!existsSync(orbitDir)) mkdirSync(orbitDir, { recursive: true })
+
+        let count = 0
+        for (const file of selectedFiles) {
+          const src = join(githubDir, file)
+          if (existsSync(src)) {
+            copyFileSync(src, join(orbitDir, file))
+            count++
+          }
+        }
+
+        return { success: true, count, files: selectedFiles }
       } catch (err) {
         if (err instanceof Error && (err.message.includes('não encontrad') || err.message.includes('Nenhum arquivo'))) throw err
         const msg = err instanceof Error ? err.message : String(err)

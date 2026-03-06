@@ -15,10 +15,12 @@ import { cn, formatRelativeTime, formatDuration } from '@/lib/utils'
 import { WorkflowDispatchDialog } from '@/components/WorkflowDispatchDialog'
 import { useRepoDetail } from './RepoDetail'
 import type { WorkflowFile, GitCommit as GitCommitType } from '@shared/types'
+import { useTranslation } from 'react-i18next'
 
 export function RepoOverview(): JSX.Element {
   const { repoId, gitStatus } = useRepoDetail()
   const navigate = useNavigate()
+  const { t } = useTranslation()
   const { repos } = useRepoStore()
   const { runs } = useRunsStore()
   const repo = repos.find((r) => r.id === repoId)
@@ -64,7 +66,7 @@ export function RepoOverview(): JSX.Element {
         {/* ── Last run status ─────────────────────────────────────────────── */}
         <section>
           <h2 className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">
-            Última execução
+            {t('workspace.runs.last_run', 'Last run')}
           </h2>
           {lastRun ? (
             <div
@@ -105,7 +107,7 @@ export function RepoOverview(): JSX.Element {
             </div>
           ) : (
             <div className="p-3.5 rounded-lg border border-dashed border-border text-center">
-              <p className="text-[13px] text-muted-foreground">Nenhuma execução ainda</p>
+              <p className="text-[13px] text-muted-foreground">{t('workspace.runs.no_runs_yet', 'No runs yet')}</p>
             </div>
           )}
         </section>
@@ -115,7 +117,7 @@ export function RepoOverview(): JSX.Element {
           {/* Branch info */}
           <section className="rounded-lg border border-border bg-card p-4">
             <h2 className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-3">
-              Branch
+              {t('workspace.git.branch', 'Branch')}
             </h2>
             {gitStatus ? (
               <div className="space-y-2">
@@ -129,11 +131,11 @@ export function RepoOverview(): JSX.Element {
                 <div className="flex items-center gap-4 text-[12px]">
                   <div className={cn('flex items-center gap-1', gitStatus.ahead > 0 ? 'text-[#3fb950]' : 'text-muted-foreground')}>
                     <ArrowUp className="h-3 w-3" />
-                    <span>{gitStatus.ahead} à frente</span>
+                    <span>{t('workspace.git.ahead_count', { count: gitStatus.ahead, defaultValue: `${gitStatus.ahead} ahead` })}</span>
                   </div>
                   <div className={cn('flex items-center gap-1', gitStatus.behind > 0 ? 'text-[#d29922]' : 'text-muted-foreground')}>
                     <ArrowDown className="h-3 w-3" />
-                    <span>{gitStatus.behind} atrás</span>
+                    <span>{t('workspace.git.behind_count', { count: gitStatus.behind, defaultValue: `${gitStatus.behind} behind` })}</span>
                   </div>
                 </div>
               </div>
@@ -149,21 +151,21 @@ export function RepoOverview(): JSX.Element {
           <section className="rounded-lg border border-border bg-card p-4">
             <div className="flex items-center justify-between mb-3">
               <h2 className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
-                Alterações
+                {t('workspace.sections.changes', 'Changes')}
               </h2>
               {totalChanges > 0 && (
                 <button
                   onClick={() => navigate(`/repo/${encodeURIComponent(repoId)}/changes`)}
                   className="text-[11px] text-primary hover:underline"
                 >
-                  Ver todas
+                  {t('common.view_all', 'View all')}
                 </button>
               )}
             </div>
             {gitStatus ? (
               <div className="space-y-1.5 text-[12px]">
                 <div className="flex items-center justify-between">
-                  <span className="text-muted-foreground">Staged</span>
+                  <span className="text-muted-foreground">{t('workspace.changes.staged_label', 'Staged')}</span>
                   <Badge
                     variant={gitStatus.staged.length > 0 ? 'secondary' : 'outline'}
                     className="text-[10px] h-4 px-1.5"
@@ -172,7 +174,7 @@ export function RepoOverview(): JSX.Element {
                   </Badge>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-muted-foreground">Modificados</span>
+                  <span className="text-muted-foreground">{t('workspace.changes.modified_label', 'Modified')}</span>
                   <Badge
                     variant={gitStatus.unstaged.length > 0 ? 'secondary' : 'outline'}
                     className="text-[10px] h-4 px-1.5"
@@ -181,7 +183,7 @@ export function RepoOverview(): JSX.Element {
                   </Badge>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-muted-foreground">Não rastreados</span>
+                  <span className="text-muted-foreground">{t('workspace.changes.untracked_label', 'Untracked')}</span>
                   <Badge
                     variant={gitStatus.untracked.length > 0 ? 'secondary' : 'outline'}
                     className="text-[10px] h-4 px-1.5"
@@ -191,7 +193,7 @@ export function RepoOverview(): JSX.Element {
                 </div>
               </div>
             ) : (
-              <p className="text-[13px] text-muted-foreground">Sem pasta local</p>
+              <p className="text-[13px] text-muted-foreground">{t('workspace.repos.no_local_folder', 'No local folder')}</p>
             )}
           </section>
         </div>
@@ -201,13 +203,13 @@ export function RepoOverview(): JSX.Element {
           <section>
             <div className="flex items-center justify-between mb-2">
               <h2 className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
-                Commits recentes
+                {t('workspace.history.recent_commits', 'Recent commits')}
               </h2>
               <button
                 onClick={() => navigate(`/repo/${encodeURIComponent(repoId)}/history`)}
                 className="text-[11px] text-primary hover:underline"
               >
-                Ver histórico
+                {t('workspace.history.view_history', 'View history')}
               </button>
             </div>
             <div className="rounded-lg border border-border bg-card divide-y divide-border overflow-hidden">
@@ -232,24 +234,24 @@ export function RepoOverview(): JSX.Element {
         <section>
           <div className="flex items-center justify-between mb-2">
             <h2 className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
-              Workflows
+              {t('workspace.sections.workflows', 'Workflows')}
             </h2>
             <div className="flex items-center gap-2">
               <button
                 onClick={() => navigate(`/repo/${encodeURIComponent(repoId)}/workflows`)}
                 className="text-[11px] text-primary hover:underline"
               >
-                Ver todos
+                {t('common.view_all', 'View all')}
               </button>
             </div>
           </div>
           {workflows.length === 0 ? (
             <EmptyState
               icon={FileCode}
-              title="Nenhum workflow"
-              description="Crie um arquivo YAML em .orbit/workflows/"
+              title={t('workspace.pipelines.no_workflows', 'No workflows')}
+              description={t('workspace.pipelines.create_help', 'Create a YAML file in .orbit/workflows/')}
               action={{
-                label: 'Criar workflow',
+                label: t('workspace.pipelines.create_workflow_btn', 'Create workflow'),
                 onClick: () => navigate(`/editor/${encodeURIComponent(repoId)}`)
               }}
               className="py-8 rounded-lg border border-dashed border-border"
@@ -276,7 +278,7 @@ export function RepoOverview(): JSX.Element {
                     onClick={() => handleRunWorkflow(wf)}
                   >
                     <Play className="h-3 w-3" />
-                    Executar
+                    {t('common.run', 'Run')}
                   </Button>
                 </div>
               ))}
@@ -287,7 +289,7 @@ export function RepoOverview(): JSX.Element {
         {/* ── Quick actions ────────────────────────────────────────────────── */}
         <section>
           <h2 className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">
-            Ações rápidas
+            {t('common.quick_actions', 'Quick actions')}
           </h2>
           <div className="flex items-center gap-2 flex-wrap">
             {repo.localPath && (
@@ -298,7 +300,7 @@ export function RepoOverview(): JSX.Element {
                 onClick={() => electron.repos.openFolder(repo.localPath!)}
               >
                 <FolderOpen className="h-3.5 w-3.5" />
-                Abrir pasta
+                {t('common.open_folder', 'Open folder')}
               </Button>
             )}
             <Button
@@ -308,7 +310,7 @@ export function RepoOverview(): JSX.Element {
               onClick={() => electron.shell.openExternal(`https://github.com/${repo.fullName}`)}
             >
               <Github className="h-3.5 w-3.5" />
-              Ver no GitHub
+              {t('common.view_github', 'View on GitHub')}
             </Button>
             <Button
               variant="outline"
@@ -317,7 +319,7 @@ export function RepoOverview(): JSX.Element {
               onClick={() => navigate(`/editor/${encodeURIComponent(repoId)}`)}
             >
               <Plus className="h-3.5 w-3.5" />
-              Novo Workflow
+              {t('workspace.pipelines.new_workflow_btn', 'New Workflow')}
             </Button>
           </div>
         </section>

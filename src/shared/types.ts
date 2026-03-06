@@ -164,6 +164,11 @@ export interface RunJob {
   durationMs: number | null
 }
 
+export interface JobGraphNode {
+  name: string
+  needs: string[]
+}
+
 export interface RunStep {
   id: string
   runId: string
@@ -282,6 +287,7 @@ export interface AppSettings {
   theme: 'dark' | 'light' | 'system'
   notifications: boolean
   autoUpdate: boolean
+  language: string | null
 }
 
 export interface GitHubUser {
@@ -320,8 +326,10 @@ export interface RunStatusEvent {
 
 export interface SyncEvent {
   repoId: string
-  type: 'new-commit' | 'pull' | 'error' | 'check'
-  message: string
+  type: 'new-commit' | 'pull' | 'error' | 'check' | 'new-release'
+  message?: string
+  messageKey?: string
+  messageArgs?: Record<string, any>
   sha?: string
 }
 
@@ -332,4 +340,5 @@ export interface RunFilter {
   workflowFile?: string
   since?: string
   limit?: number
+  offset?: number
 }

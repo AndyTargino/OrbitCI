@@ -15,7 +15,8 @@ const DEFAULTS: Omit<AppSettings, 'githubToken' | 'githubUser' | 'githubClientId
   defaultDockerImage: 'ubuntu:22.04',
   theme: 'dark',
   notifications: true,
-  autoUpdate: false
+  autoUpdate: false,
+  language: null
 }
 
 async function getSetting(key: string): Promise<string | null> {
@@ -54,7 +55,8 @@ export function registerSettingsHandlers(): void {
       defaultDockerImage: stored.defaultDockerImage ?? DEFAULTS.defaultDockerImage,
       theme: (stored.theme as 'dark' | 'light' | 'system') ?? DEFAULTS.theme,
       notifications: (stored.notifications ?? 'true') === 'true',
-      autoUpdate: (stored.autoUpdate ?? 'false') === 'true'
+      autoUpdate: (stored.autoUpdate ?? 'false') === 'true',
+      language: stored.language ?? null
     }
   })
 

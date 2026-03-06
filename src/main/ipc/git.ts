@@ -1,10 +1,11 @@
-import { ipcMain } from 'electron'
 import { IPC_CHANNELS } from '@shared/constants'
+import { eq } from 'drizzle-orm'
+import { ipcMain } from 'electron'
 import { db } from '../db'
 import { repos } from '../db/schema'
-import { eq } from 'drizzle-orm'
 import * as gitEngine from '../git/gitEngine'
 import { loadToken } from '../services/credentialService'
+import { watchRepo } from '../services/gitWatcherService'
 
 async function getLocalPath(repoId: string): Promise<string> {
   const [repo] = await db.select().from(repos).where(eq(repos.id, repoId)).limit(1)
@@ -124,16 +125,18 @@ export function registerGitHandlers(): void {
   ipcMain.handle(IPC_CHANNELS.GIT_STATUS, async (_, repoId: string) => {
     try {
       const localPath = await getLocalPath(repoId)
+      // Auto-start watching this repo for external changes (idempotent)
+      watchRepo(repoId, localPath)
       return gitEngine.getStatus(localPath)
     } catch (err) {
       throw friendlyGitError(err, 'Status')
     }
   })
 
-  ipcMain.handle(IPC_CHANNELS.GIT_DIFF, async (_, repoId: string, file?: string) => {
+  ipcMain.handle(IPC_CHANNELS.GIT_DIFF, async (_, repoId: string, file?: string, staged = false) => {
     try {
       const localPath = await getLocalPath(repoId)
-      return gitEngine.getDiff(localPath, file)
+      return gitEngine.getDiff(localPath, file, staged)
     } catch (err) {
       throw friendlyGitError(err, 'Diff')
     }
@@ -429,6 +432,15 @@ export function registerGitHandlers(): void {
       return gitEngine.getDiffStaged(localPath, file)
     } catch (err) {
       throw friendlyGitError(err, 'Diff staged')
+    }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.GIT_SHOW_COMMIT, async (_, repoId: string, sha: string) => {
+    try {
+      const localPath = await getLocalPath(repoId)
+      return gitEngine.showCommit(localPath, sha)
+    } catch (err) {
+      throw friendlyGitError(err, 'Show commit')
     }
   })
 }

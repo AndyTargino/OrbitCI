@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate, Outlet, NavLink } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import {
   RefreshCw, GitBranch, MoreHorizontal, FolderOpen,
   ExternalLink, Unlink, ArrowDownToLine, ArrowUpFromLine,
@@ -16,6 +17,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { OwnerAvatar } from '@/components/shared/OwnerAvatar'
 import { BranchSelector } from '@/components/shared/BranchSelector'
+import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { cn } from '@/lib/utils'
 import { notify } from '@/lib/notify'
 import type { GitStatus, GitBranch as GitBranchType } from '@shared/types'
@@ -74,6 +76,7 @@ function NavTab({
 
 // ── Main shell ────────────────────────────────────────────────────────────────
 export function RepoDetail(): JSX.Element {
+  const { t } = useTranslation()
   const { repoId } = useParams<{ repoId: string }>()
   const navigate = useNavigate()
   const decodedId = decodeURIComponent(repoId ?? '')
@@ -86,6 +89,7 @@ export function RepoDetail(): JSX.Element {
   const [isFetching, setIsFetching] = useState(false)
   const [isPulling, setIsPulling] = useState(false)
   const [isPushing, setIsPushing] = useState(false)
+  const [confirmUnlink, setConfirmUnlink] = useState(false)
 
   useGlobalEvents()
 
@@ -108,9 +112,9 @@ export function RepoDetail(): JSX.Element {
     try {
       await electron.git.fetch(decodedId)
       await refreshGitStatus()
-      notify('success', 'Fetch concluído', 'Referências atualizadas do remoto')
+      notify('success', t('workspace.notifications.fetch_success', 'Fetch complete'), t('workspace.git.fetch_success_desc', 'Remote references updated'))
     } catch (err: unknown) {
-      notify('failure', 'Erro no fetch', err instanceof Error ? err.message : 'Erro')
+      notify('failure', t('common.error', 'Error'), err instanceof Error ? err.message : t('common.error_unknown', 'Unknown error'))
     } finally { setIsFetching(false) }
   }
 
@@ -119,9 +123,9 @@ export function RepoDetail(): JSX.Element {
     try {
       await electron.git.pull(decodedId)
       await refreshGitStatus()
-      notify('success', 'Pull concluído', 'Branch atualizada com o remoto')
+      notify('success', t('workspace.notifications.pull_success', 'Pull complete'), t('workspace.git.pull_success_desc', 'Branch updated from remote'))
     } catch (err: unknown) {
-      notify('failure', 'Erro no pull', err instanceof Error ? err.message : 'Erro')
+      notify('failure', t('common.error', 'Error'), err instanceof Error ? err.message : t('common.error_unknown', 'Unknown error'))
     } finally { setIsPulling(false) }
   }
 
@@ -130,9 +134,9 @@ export function RepoDetail(): JSX.Element {
     try {
       await electron.git.push(decodedId)
       await refreshGitStatus()
-      notify('success', 'Push concluído', 'Commits enviados ao remoto')
+      notify('success', t('workspace.notifications.push_success', 'Push complete'), t('workspace.git.push_success_desc', 'Commits sent to remote'))
     } catch (err: unknown) {
-      notify('failure', 'Erro no push', err instanceof Error ? err.message : 'Erro')
+      notify('failure', t('common.error', 'Error'), err instanceof Error ? err.message : t('common.error_unknown', 'Unknown error'))
     } finally { setIsPushing(false) }
   }
 
@@ -143,17 +147,17 @@ export function RepoDetail(): JSX.Element {
       const updated = await electron.git.branches(decodedId)
       setBranches(updated)
     } catch (err: unknown) {
-      notify('failure', 'Erro ao trocar branch', err instanceof Error ? err.message : 'Erro')
+      notify('failure', t('workspace.notifications.checkout_failed', 'Checkout failed'), err instanceof Error ? err.message : t('common.error', 'Error'))
     }
   }
 
-  const handleUnlink = async () => {
+  const executeUnlink = async () => {
     try {
       const updated = await electron.repos.update(decodedId, { localPath: null })
       useRepoStore.getState().updateRepo(decodedId, updated)
-      notify('success', 'Pasta desvinculada', `${repo?.fullName} desvinculado da pasta local`)
+      notify('success', t('workspace.repos.unlinked_success_title', 'Folder unlinked'), t('workspace.repos.unlinked_success_desc', { name: repo?.fullName, defaultValue: '{{name}} unlinked from local folder' }))
     } catch (err: unknown) {
-      notify('failure', 'Erro ao desvincular', err instanceof Error ? err.message : 'Erro')
+      notify('failure', t('workspace.repos.unlink_error_title', 'Error unlinking'), err instanceof Error ? err.message : t('common.error', 'Error'))
     }
   }
 
@@ -168,7 +172,7 @@ export function RepoDetail(): JSX.Element {
   if (!repo) {
     return (
       <div className="flex h-full items-center justify-center">
-        <p className="text-muted-foreground">Repositório não encontrado</p>
+        <p className="text-muted-foreground">{t('workspace.repos.not_found', 'Repository not found')}</p>
       </div>
     )
   }
@@ -225,10 +229,10 @@ export function RepoDetail(): JSX.Element {
                     className="h-7 text-[12px] px-2.5 gap-1.5"
                     onClick={handleFetch}
                     disabled={isFetching}
-                    title="Fetch"
+                    title={t('workspace.git.fetch', 'Fetch')}
                   >
                     <RefreshCw className={cn('h-3 w-3', isFetching && 'animate-spin')} />
-                    Fetch
+                    {t('workspace.git.fetch', 'Fetch')}
                   </Button>
                   <Button
                     variant="outline"
@@ -236,10 +240,10 @@ export function RepoDetail(): JSX.Element {
                     className="h-7 text-[12px] px-2.5 gap-1.5"
                     onClick={handlePull}
                     disabled={isPulling}
-                    title="Pull"
+                    title={t('workspace.git.pull', 'Pull')}
                   >
                     <ArrowDownToLine className={cn('h-3 w-3', isPulling && 'animate-spin')} />
-                    Pull
+                    {t('workspace.git.pull', 'Pull')}
                     {gitStatus && gitStatus.behind > 0 && (
                       <span className="text-[#d29922] font-semibold">↓{gitStatus.behind}</span>
                     )}
@@ -250,10 +254,10 @@ export function RepoDetail(): JSX.Element {
                     className="h-7 text-[12px] px-2.5 gap-1.5"
                     onClick={handlePush}
                     disabled={isPushing}
-                    title="Push"
+                    title={t('workspace.git.push', 'Push')}
                   >
                     <ArrowUpFromLine className={cn('h-3 w-3', isPushing && 'animate-spin')} />
-                    Push
+                    {t('workspace.git.push', 'Push')}
                     {gitStatus && gitStatus.ahead > 0 && (
                       <span className="text-[#3fb950] font-semibold">↑{gitStatus.ahead}</span>
                     )}
@@ -271,7 +275,7 @@ export function RepoDetail(): JSX.Element {
                   {repo.localPath && (
                     <DropdownMenuItem onClick={() => electron.repos.openFolder(repo.localPath!)}>
                       <FolderOpen className="h-3.5 w-3.5 mr-2" />
-                      Abrir pasta
+                      {t('common.open_folder', 'Open folder')}
                     </DropdownMenuItem>
                   )}
                   <DropdownMenuItem
@@ -280,14 +284,14 @@ export function RepoDetail(): JSX.Element {
                     }
                   >
                     <Github className="h-3.5 w-3.5 mr-2" />
-                    Ver no GitHub
+                    {t('common.view_github', 'View on GitHub')}
                   </DropdownMenuItem>
                   {repo.localPath && (
                     <>
                       <DropdownMenuSeparator />
-                      <DropdownMenuItem onClick={handleUnlink} className="text-destructive focus:text-destructive">
+                      <DropdownMenuItem onClick={() => setConfirmUnlink(true)} className="text-destructive focus:text-destructive">
                         <Unlink className="h-3.5 w-3.5 mr-2" />
-                        Desvincular pasta
+                        {t('workspace.repos.unlink_folder', 'Unlink folder')}
                       </DropdownMenuItem>
                     </>
                   )}
@@ -299,11 +303,11 @@ export function RepoDetail(): JSX.Element {
 
         {/* ── Sub-navigation ───────────────────────────────────────────────── */}
         <div className="border-b border-border px-5 bg-card/20 shrink-0 flex items-end overflow-x-auto">
-          <NavTab to={`${baseUrl}/overview`} label="Overview" />
-          <NavTab to={`${baseUrl}/changes`} label="Changes" badge={totalChanges} />
-          <NavTab to={`${baseUrl}/workflows`} label="Workflows" />
-          <NavTab to={`${baseUrl}/runs`} label="Runs" />
-          <NavTab to={`${baseUrl}/history`} label="History" />
+          <NavTab to={`${baseUrl}/overview`} label={t('common.overview', 'Overview')} />
+          <NavTab to={`${baseUrl}/changes`} label={t('workspace.sections.changes', 'Changes')} badge={totalChanges} />
+          <NavTab to={`${baseUrl}/workflows`} label={t('workspace.sections.workflows', 'Workflows')} />
+          <NavTab to={`${baseUrl}/runs`} label={t('workspace.sections.runs', 'Runs')} />
+          <NavTab to={`${baseUrl}/history`} label={t('workspace.sections.history', 'History')} />
         </div>
 
         {/* ── Child page ──────────────────────────────────────────────────── */}
@@ -311,6 +315,20 @@ export function RepoDetail(): JSX.Element {
           <Outlet />
         </div>
       </div>
+      <ConfirmDialog
+        open={confirmUnlink}
+        onOpenChange={setConfirmUnlink}
+        title={t('workspace.repos.unlink_title', 'Unlink local folder')}
+        description={t('workspace.repos.unlink_desc', { name: repo?.fullName, defaultValue: 'Do you want to unlink the local folder from "{{name}}"?' })}
+        consequences={[
+          t('workspace.repos.unlink_cons1', 'The repository will remain visible in OrbitCI, but without local access'),
+          t('workspace.repos.unlink_cons2', 'No local files will be deleted'),
+          t('workspace.repos.unlink_cons3', 'You can link a folder again at any time')
+        ]}
+        confirmLabel={t('workspace.repos.unlink_btn', 'Unlink')}
+        variant="warning"
+        onConfirm={executeUnlink}
+      />
     </RepoDetailCtx.Provider>
   )
 }

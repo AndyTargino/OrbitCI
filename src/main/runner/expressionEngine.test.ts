@@ -20,6 +20,7 @@ function makeCtx(overrides?: Partial<ExpressionContext>): ExpressionContext {
       build: { outputs: { artifact: 'dist.zip', version: '1.5.0' }, outcome: 'success' },
       test: { outputs: {}, outcome: 'failure' }
     },
+    needs: {},
     ...overrides
   }
 }

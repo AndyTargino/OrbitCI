@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import {
   Play, FileCode, Loader2, Import, Plus, Github
 } from 'lucide-react'
@@ -15,6 +16,7 @@ import { useRepoDetail } from './RepoDetail'
 import type { WorkflowFile } from '@shared/types'
 
 export function RepoPipelines(): JSX.Element {
+  const { t } = useTranslation()
   const { repoId } = useRepoDetail()
   const navigate = useNavigate()
   const { repos } = useRepoStore()
@@ -73,15 +75,15 @@ export function RepoPipelines(): JSX.Element {
       const isAll = file === 'all'
       notify(
         'success',
-        isAll ? 'Workflows importados!' : 'Workflow importado!',
+        isAll ? t('workspace.pipelines.import_success_title', 'Workflows imported!') : t('workspace.pipelines.import_single_success_title', 'Workflow imported!'),
         isAll
-          ? `${result.count} arquivo${result.count !== 1 ? 's' : ''} copiado${result.count !== 1 ? 's' : ''} para .orbit/workflows/`
-          : `${file} copiado para .orbit/workflows/`
+          ? t('workspace.pipelines.import_success_desc_plural', { count: result.count, defaultValue: '{{count}} files copied to .orbit/workflows/' })
+          : t('workspace.pipelines.import_success_desc_singular', { file, defaultValue: '{{file}} copied to .orbit/workflows/' })
       )
       const wfs = await electron.workflows.list(repoId)
       setWorkflows(wfs)
     } catch (err: unknown) {
-      notify('failure', 'Erro ao importar', err instanceof Error ? err.message : 'Erro')
+      notify('failure', t('workspace.pipelines.import_error_title', 'Error importing'), err instanceof Error ? err.message : t('common.error', 'Error'))
     } finally {
       setImportingFile(null)
     }
@@ -91,7 +93,7 @@ export function RepoPipelines(): JSX.Element {
     return (
       <div className="flex items-center justify-center py-12 gap-2 text-muted-foreground">
         <Loader2 className="h-4 w-4 animate-spin" />
-        <span className="text-[13px]">Carregando...</span>
+        <span className="text-[13px]">{t('common.loading', 'Loading...')}</span>
       </div>
     )
   }
@@ -103,7 +105,7 @@ export function RepoPipelines(): JSX.Element {
         <div className="px-6 py-3 border-b border-border/50 bg-card/10 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <FileCode className="h-3.5 w-3.5 text-[#8b5cf6]" />
-            <span className="text-[12px] font-semibold text-foreground">OrbitCI Workflows</span>
+            <span className="text-[12px] font-semibold text-foreground">{t('workspace.sections.orbit_ci', 'OrbitCI')}</span>
             <span className="text-[10px] text-muted-foreground bg-muted/60 px-1.5 py-0.5 rounded-full">{workflows.length}</span>
           </div>
           <Button
@@ -112,17 +114,17 @@ export function RepoPipelines(): JSX.Element {
             onClick={() => navigate(`/editor/${encodeURIComponent(repoId)}`)}
           >
             <Plus className="h-3 w-3" />
-            Novo Workflow
+            {t('workspace.pipelines.new_workflow_btn', 'New Workflow')}
           </Button>
         </div>
 
         {workflows.length === 0 ? (
           <EmptyState
             icon={FileCode}
-            title="Nenhum workflow"
-            description="Crie um arquivo YAML em .orbit/workflows/ para começar"
+            title={t('workspace.pipelines.no_workflows', 'No workflows')}
+            description={t('workspace.pipelines.create_help', 'Create a YAML file in .orbit/workflows/ to start')}
             action={{
-              label: 'Criar workflow',
+              label: t('workspace.pipelines.create_workflow_btn', 'Create workflow'),
               onClick: () => navigate(`/editor/${encodeURIComponent(repoId)}`)
             }}
           />
@@ -149,7 +151,7 @@ export function RepoPipelines(): JSX.Element {
                     className="h-7 text-[12px] px-2.5"
                     onClick={() => navigate(`/editor/${encodeURIComponent(repoId)}/${wf.file}`)}
                   >
-                    Editar
+                    {t('common.edit', 'Edit')}
                   </Button>
                   <Button
                     size="sm"
@@ -157,7 +159,7 @@ export function RepoPipelines(): JSX.Element {
                     onClick={() => handleRunWorkflow(wf)}
                   >
                     <Play className="h-3 w-3" />
-                    Executar
+                    {t('common.run', 'Run')}
                   </Button>
                 </div>
               </div>
@@ -172,15 +174,15 @@ export function RepoPipelines(): JSX.Element {
           <div className="px-6 py-3 border-b border-border/50 bg-card/10 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Github className="h-3.5 w-3.5" />
-              <span className="text-[12px] font-semibold text-foreground">GitHub Actions</span>
+              <span className="text-[12px] font-semibold text-foreground">{t('common.github_actions', 'GitHub Actions')}</span>
               <span className="text-[10px] text-muted-foreground bg-muted/60 px-1.5 py-0.5 rounded-full">{githubWorkflows.length}</span>
               {newCount > 0 && (
                 <span className="text-[10px] text-[#d29922] font-medium">
-                  {newCount} novo{newCount !== 1 ? 's' : ''}
+                  {t('workspace.pipelines.new_count', { count: newCount, defaultValue: `${newCount} new` })}
                 </span>
               )}
               {allImported && (
-                <span className="text-[10px] text-[#3fb950]">— todos sincronizados</span>
+                <span className="text-[10px] text-[#3fb950]">— {t('workspace.pipelines.all_synced_label', 'all synced')}</span>
               )}
             </div>
             <Button
@@ -195,7 +197,7 @@ export function RepoPipelines(): JSX.Element {
               ) : (
                 <Import className="h-3.5 w-3.5" />
               )}
-              {allImported ? 'Reimportar todos' : 'Importar todos'}
+              {allImported ? t('workspace.pipelines.reimport_all_btn', 'Reimport all') : t('workspace.pipelines.import_all_btn', 'Import all')}
             </Button>
           </div>
 
@@ -218,14 +220,14 @@ export function RepoPipelines(): JSX.Element {
                           variant="outline"
                           className="text-[10px] px-1.5 py-0 h-4 text-[#3fb950] border-[#3fb950]/30 bg-[#3fb950]/10"
                         >
-                          sincronizado
+                          {t('workspace.pipelines.synced_label', 'synced')}
                         </Badge>
                       ) : (
                         <Badge
                           variant="outline"
                           className="text-[10px] px-1.5 py-0 h-4 text-[#e3b341] border-[#e3b341]/30 bg-[#e3b341]/10"
                         >
-                          não importado
+                          {t('workspace.pipelines.not_imported_label', 'not imported')}
                         </Badge>
                       )}
                     </div>
@@ -251,7 +253,7 @@ export function RepoPipelines(): JSX.Element {
                       ) : (
                         <Import className="h-3.5 w-3.5" />
                       )}
-                      {isImported ? 'Reimportar' : 'Importar'}
+                      {isImported ? t('common.reimport', 'Reimport') : t('common.import', 'Import')}
                     </Button>
                   </div>
                 </div>

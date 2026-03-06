@@ -1,7 +1,6 @@
-import { simpleGit, SimpleGit, CleanOptions } from 'simple-git'
-import { join } from 'path'
-import { mkdirSync, existsSync } from 'fs'
-import type { GitStatus, GitFile, GitCommit, GitBranch, GitTag } from '@shared/types'
+import type { GitBranch, GitCommit, GitFile, GitStatus, GitTag } from '@shared/types'
+import { mkdirSync } from 'fs'
+import { simpleGit, SimpleGit } from 'simple-git'
 
 const instances = new Map<string, SimpleGit>()
 
@@ -44,7 +43,7 @@ export async function getStatus(localPath: string): Promise<GitStatus> {
 
   for (const file of status.files) {
     const idx = file.index.trim()
-    const wd  = file.working_dir.trim()
+    const wd = file.working_dir.trim()
 
     if (idx === '?' && wd === '?') {
       untracked.push({ path: file.path, status: 'untracked' })
@@ -69,22 +68,66 @@ export async function getStatus(localPath: string): Promise<GitStatus> {
   }
 }
 
-export async function getDiff(localPath: string, file?: string): Promise<string> {
+export async function getDiff(localPath: string, file?: string, staged = false): Promise<string> {
   const g = git(localPath)
-  if (!file) return g.diff(['HEAD'])
+  const CTX = ['-U3'] // 3 lines of context, same as GitHub default
 
-  // Try normal diff first (works for tracked files)
-  const d = await g.diff(['HEAD', '--', file]).catch(() => '')
+  if (staged) {
+    // Staged diff: compare index vs HEAD (or empty tree if no commits yet)
+    const args = ['--staged', ...CTX]
+    if (file) args.push('--', file)
+    const d = await g.diff(args).catch(() => '')
+    if (d.trim()) return d
+    // No commits yet: compare index vs empty tree
+    const emptyTree = '4b825dc642cb6eb9a060e54bf8d69288fbee4904'
+    const args2 = ['--cached', ...CTX, emptyTree]
+    if (file) args2.push('--', file)
+    return g.diff(args2).catch(() => '')
+  }
+
+  if (!file) {
+    // All unstaged changes
+    const d = await g.diff([...CTX, 'HEAD']).catch(() => '')
+    return d
+  }
+
+  // Unstaged diff for a specific file
+  // 1. Try against HEAD (works for tracked modified files)
+  const d = await g.diff([...CTX, 'HEAD', '--', file]).catch(() => '')
   if (d.trim()) return d
 
-  // For untracked / new files, use --no-index against /dev/null
+  // 2. Repo has no commits yet — compare working tree vs index
+  const d2 = await g.diff([...CTX, '--', file]).catch(() => '')
+  if (d2.trim()) return d2
+
+  // 3. Check if the file exists in HEAD (is tracked)
+  //    If it IS in HEAD but diffs are empty → all changes are staged; show the staged diff instead
+  //    If it is NOT in HEAD → genuinely new file, use --no-index to show full content
+  const inHead = await g.raw(['ls-files', '--error-unmatch', '--', file]).catch(() => '')
+  if (inHead.trim()) {
+    // File is tracked in HEAD but has no unstaged changes.
+    // Show the staged diff so the user sees what will be committed.
+    const staged = await g.diff(['--staged', ...CTX, '--', file]).catch(() => '')
+    if (staged.trim()) return staged
+    // Staged diff also empty (e.g. file unchanged at all) — nothing to show
+    return ''
+  }
+
+  // Check if the file is in the index (staged as new file, not yet in HEAD)
+  const inIndex = await g.raw(['ls-files', '--', file]).catch(() => '')
+  if (inIndex.trim()) {
+    // New file staged but not yet committed — show staged diff vs empty tree
+    const emptyTree = '4b825dc642cb6eb9a060e54bf8d69288fbee4904'
+    const d3 = await g.diff(['--cached', ...CTX, emptyTree, '--', file]).catch(() => '')
+    if (d3.trim()) return d3
+  }
+
+  // 4. Truly untracked file (never staged, never in HEAD) — show full content as additions
   try {
-    return await g.diff(['--no-index', '/dev/null', file])
+    return await g.diff([...CTX, '--no-index', '/dev/null', file])
   } catch (err: unknown) {
-    // --no-index exits with code 1 when there IS a diff (it means files differ)
     if (err && typeof err === 'object' && 'message' in err) {
       const msg = (err as { message: string }).message
-      // simple-git wraps the output in the error message
       const diffStart = msg.indexOf('diff --git')
       if (diffStart !== -1) return msg.slice(diffStart)
     }
@@ -122,7 +165,7 @@ export async function discardFiles(localPath: string, files: string[]): Promise<
     const { resolve } = await import('path')
     const { unlink } = await import('fs/promises')
     for (const f of untracked) {
-      await unlink(resolve(localPath, f)).catch(() => {})
+      await unlink(resolve(localPath, f)).catch(() => { })
     }
   }
 }
@@ -355,6 +398,11 @@ export async function getRemotes(localPath: string): Promise<{ name: string; fet
 export async function unstageAll(localPath: string): Promise<void> {
   const g = git(localPath)
   await g.reset(['HEAD'])
+}
+
+export async function showCommit(localPath: string, sha: string): Promise<string> {
+  const g = git(localPath)
+  return g.show([sha, '--format=', '--patch'])
 }
 
 export async function getDiffStaged(localPath: string, file?: string): Promise<string> {

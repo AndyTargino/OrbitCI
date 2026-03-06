@@ -1,18 +1,19 @@
-import { app, BrowserWindow, shell, ipcMain } from 'electron'
+import { is } from '@electron-toolkit/utils'
+import { app, BrowserWindow, ipcMain, shell } from 'electron'
+import { autoUpdater } from 'electron-updater'
 import { join } from 'path'
+import { IPC_CHANNELS } from '../shared/constants'
 import { initDatabase } from './db'
 import { registerAllHandlers } from './ipc'
-import { loadToken } from './services/credentialService'
-import { initGitHub } from './services/githubService'
-import { startSyncService, setRunner } from './services/syncService'
-import { startScheduleService, setScheduleRunner } from './services/scheduleService'
-import { setMainWindow } from './windowState'
 import { processOAuthDeepLink } from './ipc/auth'
 import { initNotificationManager } from './notification/manager'
+import { loadToken } from './services/credentialService'
 import { cleanupOrphanedContainers } from './services/dockerService'
-import { is } from '@electron-toolkit/utils'
-import { autoUpdater } from 'electron-updater'
-import { IPC_CHANNELS } from '../shared/constants'
+import { initGitHub } from './services/githubService'
+import { stopAllWatchers } from './services/gitWatcherService'
+import { setScheduleRunner, startScheduleService } from './services/scheduleService'
+import { setRunner, startSyncService } from './services/syncService'
+import { setMainWindow } from './windowState'
 
 // ─── Auto-update configuration ───────────────────────────────────────────────
 autoUpdater.autoDownload = false
@@ -129,7 +130,7 @@ function createWindow(): void {
     show: false,
     frame: false,
     titleBarStyle: 'hidden',
-    backgroundColor: '#0f0f17',
+    backgroundColor: '#0a0a0a',
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false,
@@ -200,15 +201,15 @@ app.whenReady().then(async () => {
       if (autoUpdateEnabled) {
         // Auto-update: check + download + install on quit
         autoUpdater.autoDownload = true
-        autoUpdater.checkForUpdates().catch(() => {})
+        autoUpdater.checkForUpdates().catch(() => { })
       } else {
         // Manual: just check, don't download
         autoUpdater.autoDownload = false
-        autoUpdater.checkForUpdates().catch(() => {})
+        autoUpdater.checkForUpdates().catch(() => { })
       }
     } catch {
       // Fallback: just check
-      autoUpdater.checkForUpdates().catch(() => {})
+      autoUpdater.checkForUpdates().catch(() => { })
     }
   }
 
@@ -218,6 +219,7 @@ app.whenReady().then(async () => {
 })
 
 app.on('window-all-closed', () => {
+  stopAllWatchers()
   if (process.platform !== 'darwin') app.quit()
 })
 

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import { Save, Play, ArrowLeft, FileCode, Plus, Loader2 } from 'lucide-react'
 import { electron } from '@/lib/electron'
 import { Button } from '@/components/ui/button'
@@ -49,6 +50,7 @@ jobs:
 export function Editor(): JSX.Element {
   const { repoId, file } = useParams<{ repoId: string; file?: string }>()
   const navigate = useNavigate()
+  const { t } = useTranslation()
   const decodedId = decodeURIComponent(repoId ?? '')
 
   const [content, setContent] = useState(WORKFLOW_TEMPLATE)
@@ -70,7 +72,7 @@ export function Editor(): JSX.Element {
       setFileName(file!)
       setIsNew(false)
     } catch (err) {
-      notify('failure', 'Erro', 'Não foi possível carregar o workflow')
+      notify('failure', t('common.error', 'Error'), t('workspace.editor.error_load', 'Could not load workflow'))
     }
   }
 
@@ -83,11 +85,11 @@ export function Editor(): JSX.Element {
       } else {
         await electron.workflows.save(decodedId, name, content)
       }
-      notify('success', 'Workflow salvo!', name)
+      notify('success', t('workspace.editor.saved_title', 'Workflow saved!'), name)
       navigate(`/repo/${repoId}/workflows`)
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Erro ao salvar'
-      notify('failure', 'Erro ao salvar', msg)
+      const msg = err instanceof Error ? err.message : t('workspace.editor.save_error', 'Error saving')
+      notify('failure', t('workspace.editor.save_error', 'Error saving'), msg)
     } finally {
       setIsSaving(false)
     }
@@ -101,8 +103,8 @@ export function Editor(): JSX.Element {
       const runId = await electron.workflows.run(decodedId, name)
       navigate(`/run/${runId}`)
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Erro'
-      notify('failure', 'Erro', msg)
+      const msg = err instanceof Error ? err.message : t('common.error', 'Error')
+      notify('failure', t('common.error', 'Error'), msg)
     } finally {
       setIsRunning(false)
     }
@@ -121,7 +123,7 @@ export function Editor(): JSX.Element {
             {isNew ? (
               <div className="flex items-center gap-2 min-w-0">
                 <Label htmlFor="filename" className="text-sm text-muted-foreground whitespace-nowrap">
-                  Nome do arquivo:
+                  {t('workspace.editor.filename_label', 'Filename:')}
                 </Label>
                 <Input
                   id="filename"
@@ -139,11 +141,11 @@ export function Editor(): JSX.Element {
           <div className="flex gap-2 flex-shrink-0">
             <Button variant="outline" size="sm" onClick={handleSave} disabled={isSaving || isRunning}>
               {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-              Salvar
+              {t('common.save', 'Save')}
             </Button>
             <Button size="sm" onClick={handleSaveAndRun} disabled={isSaving || isRunning}>
               {isRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
-              Salvar e Executar
+              {t('workspace.editor.save_run_btn', 'Save and Run')}
             </Button>
           </div>
         </div>
@@ -167,12 +169,12 @@ export function Editor(): JSX.Element {
         {/* Quick reference */}
         <div className="w-64 border-l border-border overflow-auto p-4 flex-shrink-0">
           <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">
-            Referência Rápida
+            {t('workspace.editor.quick_ref_title', 'Quick Reference')}
           </h3>
 
           <div className="space-y-4 text-xs">
             <div>
-              <p className="font-medium mb-1.5">Triggers</p>
+              <p className="font-medium mb-1.5">{t('workspace.pipelines.triggers_label', 'Triggers')}</p>
               <div className="space-y-1 text-muted-foreground">
                 {['push', 'pull_request', 'workflow_dispatch', 'schedule'].map((t) => (
                   <div key={t}><code className="text-foreground/70">{t}</code></div>
@@ -181,7 +183,7 @@ export function Editor(): JSX.Element {
             </div>
 
             <div>
-              <p className="font-medium mb-1.5">Actions OrbitCI</p>
+              <p className="font-medium mb-1.5">{t('workspace.editor.actions_label', 'OrbitCI Actions')}</p>
               <div className="space-y-1 text-muted-foreground">
                 {[
                   'git/commit', 'git/push', 'git/tag', 'git/release',
@@ -196,7 +198,7 @@ export function Editor(): JSX.Element {
             </div>
 
             <div>
-              <p className="font-medium mb-1.5">Contextos</p>
+              <p className="font-medium mb-1.5">{t('workspace.editor.contexts_label', 'Contexts')}</p>
               <div className="space-y-1 text-muted-foreground font-mono">
                 {[
                   '${{ github.sha }}',

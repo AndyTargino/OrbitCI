@@ -1,26 +1,27 @@
 import type {
-  Repo,
+  AppSettings,
+  DockerContainer,
+  DockerStatus,
+  GitBranch,
+  GitCommit,
+  GitHubJob,
   GitHubRepo,
   GitHubRun,
-  GitHubJob,
-  RunFilter,
-  AppSettings,
   GitHubUser,
-  WorkflowFile,
-  Run,
-  RunLog,
-  RunJob,
-  RunStep,
-  MetricSample,
-  GitStatus,
-  GitCommit,
-  GitBranch,
-  GitTag,
-  GitStash,
   GitRemote,
-  DockerStatus,
-  DockerContainer,
-  Secret
+  GitStash,
+  GitStatus,
+  GitTag,
+  JobGraphNode,
+  MetricSample,
+  Repo,
+  Run,
+  RunFilter,
+  RunJob,
+  RunLog,
+  RunStep,
+  Secret,
+  WorkflowFile
 } from '@shared/types'
 
 // ─── ElectronAPI type (mirrors preload/index.ts contextBridge API) ─────────────
@@ -50,8 +51,10 @@ export interface ElectronAPI {
     deleteOrbitDir: (localPath: string) => Promise<{ success: boolean; deleted: boolean }>
     checkGithubWorkflows: (localPath: string) => Promise<{ found: boolean; files: string[] }>
     importGithubWorkflows: (localPath: string) => Promise<{ success: boolean; count: number; files: string[] }>
-    listGithubWorkflows: (localPath: string) => Promise<{ file: string; path: string }[]>
+    listGithubWorkflows: (localPath: string) => Promise<{ file: string; path: string; content?: string }[]>
     findLocal: (repoName: string) => Promise<string[]>
+    getGithubWorkflowContent: (localPath: string, file: string) => Promise<string>
+    importGithubWorkflowsSelective: (localPath: string, files: string[]) => Promise<{ success: boolean; count: number; files: string[] }>
   }
   workflows: {
     list: (repoId: string) => Promise<WorkflowFile[]>
@@ -69,13 +72,14 @@ export interface ElectronAPI {
     getSteps: (runId: string) => Promise<RunStep[]>
     cancel: (runId: string) => Promise<{ success: boolean }>
     getMetrics: (runId: string, jobName?: string, stepName?: string) => Promise<MetricSample[]>
+    getJobGraph: (runId: string) => Promise<JobGraphNode[]>
     listGitHub: (repoId: string, perPage?: number, page?: number, status?: string) => Promise<GitHubRun[]>
     listGitHubRunJobs: (repoId: string, runId: number) => Promise<GitHubJob[]>
     getGitHubJobLogs: (repoId: string, jobId: number) => Promise<string>
   }
   git: {
     status: (repoId: string) => Promise<GitStatus>
-    diff: (repoId: string, file?: string) => Promise<string>
+    diff: (repoId: string, file?: string, staged?: boolean) => Promise<string>
     stage: (repoId: string, files: string[]) => Promise<void>
     stageAll: (repoId: string) => Promise<void>
     unstage: (repoId: string, files: string[]) => Promise<void>
@@ -104,6 +108,7 @@ export interface ElectronAPI {
     remotes: (repoId: string) => Promise<GitRemote[]>
     unstageAll: (repoId: string) => Promise<GitStatus>
     diffStaged: (repoId: string, file?: string) => Promise<string>
+    showCommit: (repoId: string, sha: string) => Promise<string>
   }
   docker: {
     status: () => Promise<DockerStatus>
@@ -134,6 +139,7 @@ export interface ElectronAPI {
   shell: {
     openExternal: (url: string) => Promise<void>
   }
+  platform: 'win32' | 'darwin' | 'linux'
   on: (channel: string, callback: (...args: unknown[]) => void) => () => void
   off: (channel: string, callback: (...args: unknown[]) => void) => void
 }

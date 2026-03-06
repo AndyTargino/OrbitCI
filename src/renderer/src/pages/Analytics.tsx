@@ -1,4 +1,5 @@
 import { useEffect, useState, useMemo, useCallback, useRef } from 'react'
+import { useTranslation } from 'react-i18next'
 import {
   CheckCircle2, XCircle, Loader2, Clock, Activity,
   TrendingUp, GitBranch, Zap, BarChart2, ChevronDown,
@@ -57,15 +58,14 @@ function startOfRange(r: DateRange): Date {
 }
 
 function isoDate(d: Date): string { return d.toISOString().slice(0, 10) }
-
-function buildEmptyBuckets(range: DateRange): DayBucket[] {
+function buildEmptyBuckets(range: DateRange, i18n: any): DayBucket[] {
   const days = dateRangeDays(range)
   return Array.from({ length: days }, (_, i) => {
     const d = new Date()
     d.setDate(d.getDate() - (days - 1 - i))
     d.setHours(0, 0, 0, 0)
     return {
-      label: d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }),
+      label: d.toLocaleDateString(i18n.language, { day: '2-digit', month: '2-digit' }),
       date: isoDate(d),
       count: 0,
       failure: 0,
@@ -365,6 +365,7 @@ function SortHeader({ label, field, sortBy, sortDir, onSort, align = 'right' }: 
 
 // ─── Main component ───────────────────────────────────────────────────────────
 export function Analytics(): JSX.Element {
+  const { t, i18n } = useTranslation()
   const { repos } = useRepoStore()
   const [range, setRange] = useState<DateRange>('7d')
   const [source, setSource] = useState<Source>('orbit')
@@ -483,7 +484,7 @@ export function Analytics(): JSX.Element {
 
   // ── Day buckets (with repo breakdown) ───────────────
   const buckets = useMemo((): DayBucket[] => {
-    const days = buildEmptyBuckets(range)
+    const days = buildEmptyBuckets(range, i18n)
     const map = new Map(days.map((b) => [b.date, b]))
 
     if (source === 'orbit') {
@@ -565,10 +566,10 @@ export function Analytics(): JSX.Element {
   const avgPerDay = buckets.length > 0 ? totalRuns / buckets.length : 0
 
   const rangeLabels: { value: DateRange; label: string }[] = [
-    { value: 'today', label: 'Hoje' },
-    { value: '7d', label: '7 dias' },
-    { value: '30d', label: '30 dias' },
-    { value: '90d', label: '90 dias' },
+    { value: 'today', label: t('common.time.today', 'Today') },
+    { value: '7d', label: t('common.time.days_count', { count: 7, defaultValue: '7 days' }) },
+    { value: '30d', label: t('common.time.days_count', { count: 30, defaultValue: '30 days' }) },
+    { value: '90d', label: t('common.time.days_count', { count: 90, defaultValue: '90 days' }) },
   ]
 
   const hasActiveFilters = statusFilter !== null || repoFilter !== 'all'
@@ -582,7 +583,7 @@ export function Analytics(): JSX.Element {
           <div className="flex items-center justify-between gap-4">
             <h1 className="text-xl font-bold tracking-tight flex items-center gap-2">
               <BarChart2 className="h-5 w-5 text-primary" />
-              Estatísticas
+              {t('workspace.analytics.title', 'Analytics')}
             </h1>
           </div>
 
@@ -649,14 +650,14 @@ export function Analytics(): JSX.Element {
                 )}>
                   <GitBranch className="h-3 w-3" />
                   <span className="max-w-[140px] truncate">
-                    {repoFilter === 'all' ? 'Todos os repos' : (repos.find((r) => r.id === repoFilter)?.name ?? repoFilter.split('/')[1] ?? repoFilter)}
+                    {repoFilter === 'all' ? t('workspace.analytics.all_repos', 'All repos') : (repos.find((r) => r.id === repoFilter)?.name ?? repoFilter.split('/')[1] ?? repoFilter)}
                   </span>
                   <ChevronDown className="h-3 w-3" />
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start" className="w-56 text-[13px]">
                 <DropdownMenuItem onClick={() => setRepoFilter('all')}>
-                  <span className={cn('flex-1', repoFilter === 'all' && 'font-semibold text-primary')}>Todos os repositórios</span>
+                  <span className={cn('flex-1', repoFilter === 'all' && 'font-semibold text-primary')}>{t('workspace.analytics.all_repositories', 'All repositories')}</span>
                 </DropdownMenuItem>
                 {repos.map((r) => (
                   <DropdownMenuItem key={r.id} onClick={() => setRepoFilter(r.id)}>
@@ -676,19 +677,19 @@ export function Analytics(): JSX.Element {
                     : 'border-border text-muted-foreground hover:text-foreground'
                 )}>
                   <Filter className="h-3 w-3" />
-                  <span>{statusFilter ?? 'Todos os status'}</span>
+                  <span>{statusFilter ? t(`workspace.status.${statusFilter}`, { defaultValue: statusFilter }) : t('workspace.analytics.all_status', 'All status')}</span>
                   <ChevronDown className="h-3 w-3" />
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start" className="w-48 text-[13px]">
                 <DropdownMenuItem onClick={() => setStatusFilter(null)}>
-                  <span className={cn('flex-1', !statusFilter && 'font-semibold text-primary')}>Todos os status</span>
+                  <span className={cn('flex-1', !statusFilter && 'font-semibold text-primary')}>{t('workspace.analytics.all_status', 'All status')}</span>
                 </DropdownMenuItem>
                 {[
-                  { status: 'success' as RunStatus, label: 'Sucesso', color: '#3fb950' },
-                  { status: 'failure' as RunStatus, label: 'Falha', color: '#f85149' },
-                  { status: 'running' as RunStatus, label: 'Executando', color: '#58a6ff' },
-                  { status: 'cancelled' as RunStatus, label: 'Cancelado', color: '#d29922' },
+                  { status: 'success' as RunStatus, label: t('workspace.status.success', 'Success'), color: '#3fb950' },
+                  { status: 'failure' as RunStatus, label: t('workspace.status.failure', 'Failure'), color: '#f85149' },
+                  { status: 'running' as RunStatus, label: t('workspace.status.running', 'Running'), color: '#58a6ff' },
+                  { status: 'cancelled' as RunStatus, label: t('workspace.status.cancelled', 'Cancelled'), color: '#d29922' },
                 ].map((item) => (
                   <DropdownMenuItem key={item.status} onClick={() => setStatusFilter(item.status)}>
                     <span className="w-2 h-2 rounded-full mr-2 shrink-0" style={{ background: item.color }} />
@@ -705,15 +706,15 @@ export function Analytics(): JSX.Element {
                 className="flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
               >
                 <X className="h-3 w-3" />
-                Limpar
+                {t('common.clear', 'Clear')}
               </button>
             )}
 
             {/* Summary text */}
             <div className="flex-1" />
             <span className="text-[11px] text-muted-foreground">
-              {source === 'orbit' ? 'OrbitCI Local' : 'GitHub Actions'}
-              {' — '}{dateRangeDays(range) === 1 ? 'hoje' : `últimos ${dateRangeDays(range)} dias`}
+              {source === 'orbit' ? t('workspace.analytics.source_orbit_label', 'OrbitCI Local') : 'GitHub Actions'}
+              {' — '}{dateRangeDays(range) === 1 ? t('common.time.today', 'today') : t('common.time.last_days_label', { count: dateRangeDays(range), defaultValue: `last ${dateRangeDays(range)} days` })}
             </span>
           </div>
         </div>
@@ -733,7 +734,7 @@ export function Analytics(): JSX.Element {
                     <span className="relative inline-flex rounded-full h-2 w-2 bg-[#58a6ff]" />
                   </span>
                   <p className="text-xs font-semibold text-[#58a6ff] uppercase tracking-wide">
-                    {liveRuns.length} em execução agora
+                    {t('workspace.analytics.live_running_count', { count: liveRuns.length, defaultValue: `${liveRuns.length} running now` })}
                   </p>
                 </div>
                 <div className="space-y-1.5">
@@ -745,26 +746,26 @@ export function Analytics(): JSX.Element {
             {/* ── Stat cards ───────────────────────────────────────────── */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
               <StatCard
-                icon={Activity} label="Total de execuções" value={active.total}
+                icon={Activity} label={t('workspace.analytics.total_runs_label', 'Total runs')} value={active.total}
                 iconBg={source === 'orbit' ? 'bg-primary/10 text-primary' : 'bg-[#58a6ff]/10 text-[#58a6ff]'}
                 onClick={() => handleStatusFilter(null)}
                 active={statusFilter === null}
               />
               <StatCard
-                icon={TrendingUp} label="Taxa de sucesso" value={`${active.rate}%`}
-                sub={`${active.success} ok · ${active.failure} falha${active.failure !== 1 ? 's' : ''}`}
+                icon={TrendingUp} label={t('workspace.analytics.success_rate_label', 'Success rate')} value={`${active.rate}%`}
+                sub={t('workspace.analytics.success_breakdown', { success: active.success, failure: active.failure, defaultValue: `${active.success} ok \u00b7 ${active.failure} failure${active.failure !== 1 ? 's' : ''}` })}
                 iconBg="bg-[#3fb950]/10 text-[#3fb950]"
               />
               <StatCard
-                icon={Clock} label="Duração média"
+                icon={Clock} label={t('workspace.analytics.avg_duration_label', 'Average duration')}
                 value={source === 'orbit' ? formatDuration(active.avgMs) : '—'}
-                sub={source === 'orbit' ? `de ${orbitRuns.filter((r) => r.durationMs != null).length} finalizados` : 'dados indisponíveis'}
+                sub={source === 'orbit' ? t('workspace.analytics.finished_count', { count: orbitRuns.filter((r) => r.durationMs != null).length, defaultValue: `from ${orbitRuns.filter((r) => r.durationMs != null).length} finished` }) : t('workspace.analytics.no_data_available', 'data unavailable')}
                 iconBg="bg-[#d29922]/10 text-[#d29922]"
               />
               <StatCard
-                icon={Zap} label="Em execução"
+                icon={Zap} label={t('workspace.status.running', 'Running')}
                 value={source === 'orbit' ? liveRuns.length : active.running}
-                sub={active.cancelled > 0 ? `${active.cancelled} cancelado${active.cancelled !== 1 ? 's' : ''}` : undefined}
+                sub={active.cancelled > 0 ? t('workspace.analytics.cancelled_count', { count: active.cancelled, defaultValue: `${active.cancelled} cancelled` }) : undefined}
                 iconBg="bg-[#58a6ff]/10 text-[#58a6ff]"
               />
             </div>
@@ -777,8 +778,8 @@ export function Analytics(): JSX.Element {
                     <Cpu className="h-4 w-4 text-blue-400" />
                   </div>
                   <div>
-                    <p className="text-[10px] text-muted-foreground uppercase tracking-wide font-medium">Pico CPU Médio</p>
-                    <p className="text-lg font-bold tabular-nums">{active.avgCpu !== null ? `${active.avgCpu.toFixed(1)}%` : 'Sem dados'}</p>
+                    <p className="text-[10px] text-muted-foreground uppercase tracking-wide font-medium">{t('workspace.analytics.avg_peak_cpu', 'Avg Peak CPU')}</p>
+                    <p className="text-lg font-bold tabular-nums">{active.avgCpu !== null ? `${active.avgCpu.toFixed(1)}%` : t('common.no_data', 'No data')}</p>
                   </div>
                 </div>
                 <div className="rounded-xl border border-border bg-card px-4 py-3.5 flex items-center gap-3">
@@ -786,8 +787,8 @@ export function Analytics(): JSX.Element {
                     <MemoryStick className="h-4 w-4 text-green-400" />
                   </div>
                   <div>
-                    <p className="text-[10px] text-muted-foreground uppercase tracking-wide font-medium">Pico RAM Médio</p>
-                    <p className="text-lg font-bold tabular-nums">{active.avgRam !== null ? formatBytes(active.avgRam) : 'Sem dados'}</p>
+                    <p className="text-[10px] text-muted-foreground uppercase tracking-wide font-medium">{t('workspace.analytics.avg_peak_ram', 'Avg Peak RAM')}</p>
+                    <p className="text-lg font-bold tabular-nums">{active.avgRam !== null ? formatBytes(active.avgRam) : t('common.no_data', 'No data')}</p>
                   </div>
                 </div>
                 <div className="rounded-xl border border-border bg-card px-4 py-3.5 flex items-center gap-3">
@@ -795,7 +796,7 @@ export function Analytics(): JSX.Element {
                     <Monitor className="h-4 w-4 text-purple-400" />
                   </div>
                   <div>
-                    <p className="text-[10px] text-muted-foreground uppercase tracking-wide font-medium">Pico GPU Médio</p>
+                    <p className="text-[10px] text-muted-foreground uppercase tracking-wide font-medium">{t('workspace.analytics.avg_peak_gpu', 'Avg Peak GPU')}</p>
                     <p className="text-lg font-bold tabular-nums">{active.avgGpu !== null ? `${active.avgGpu.toFixed(1)}%` : 'N/A'}</p>
                   </div>
                 </div>
@@ -807,7 +808,7 @@ export function Analytics(): JSX.Element {
               {/* Bar chart with hover */}
               <div className="lg:col-span-2 rounded-xl border border-border bg-card p-4">
                 <div className="flex items-center justify-between mb-3">
-                  <h2 className="text-sm font-semibold">Execuções por dia</h2>
+                  <h2 className="text-sm font-semibold">{t('workspace.analytics.runs_per_day_title', 'Executions per day')}</h2>
                   <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
                     <span className="flex items-center gap-1">
                       <span className="inline-block w-2.5 h-2.5 rounded-sm" style={{ background: accentColor, opacity: 0.7 }} />
@@ -815,7 +816,7 @@ export function Analytics(): JSX.Element {
                     </span>
                     <span className="flex items-center gap-1">
                       <span className="inline-block w-2.5 h-2.5 rounded-sm bg-[#f85149] opacity-55" />
-                      Falhas
+                      {t('workspace.status.failure', 'Failure')}
                     </span>
                   </div>
                 </div>
@@ -824,9 +825,9 @@ export function Analytics(): JSX.Element {
 
                 <div className="mt-3 pt-3 border-t border-border grid grid-cols-3 text-center gap-2">
                   {[
-                    { label: 'Total', value: String(totalRuns) },
-                    { label: 'Pico/dia', value: `${peakDay}` },
-                    { label: 'Média/dia', value: fmtAvg(avgPerDay) },
+                    { label: t('common.total', 'Total'), value: String(totalRuns) },
+                    { label: t('workspace.analytics.peak_day', 'Peak/day'), value: `${peakDay}` },
+                    { label: t('workspace.analytics.avg_day', 'Avg/day'), value: fmtAvg(avgPerDay) },
                   ].map((item) => (
                     <div key={item.label}>
                       <p className="text-sm font-bold tabular-nums">{item.value}</p>
@@ -838,7 +839,7 @@ export function Analytics(): JSX.Element {
 
               {/* Donut */}
               <div className="rounded-xl border border-border bg-card p-4">
-                <h2 className="text-sm font-semibold mb-3">Distribuição</h2>
+                <h2 className="text-sm font-semibold mb-3">{t('workspace.analytics.distribution_title', 'Distribution')}</h2>
                 <div className="flex flex-col items-center gap-3">
                   <div className="relative">
                     <DonutChart
@@ -850,16 +851,16 @@ export function Analytics(): JSX.Element {
                     <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                       <div className="text-center">
                         <p className="text-xl font-bold leading-none">{active.total}</p>
-                        <p className="text-[9px] text-muted-foreground mt-0.5">runs</p>
+                        <p className="text-[9px] text-muted-foreground mt-0.5">{t('workspace.analytics.runs_label', 'runs')}</p>
                       </div>
                     </div>
                   </div>
                   <div className="w-full space-y-1.5">
                     {[
-                      { label: 'Sucesso', color: '#3fb950', value: active.success, status: 'success' as RunStatus },
-                      { label: 'Falha', color: '#f85149', value: active.failure, status: 'failure' as RunStatus },
-                      { label: 'Executando', color: accentColor, value: active.running, status: 'running' as RunStatus },
-                      { label: 'Cancelado', color: '#d29922', value: active.cancelled, status: 'cancelled' as RunStatus },
+                      { label: t('workspace.status.success', 'Success'), color: '#3fb950', value: active.success, status: 'success' as RunStatus },
+                      { label: t('workspace.status.failure', 'Failure'), color: '#f85149', value: active.failure, status: 'failure' as RunStatus },
+                      { label: t('workspace.status.running', 'Running'), color: accentColor, value: active.running, status: 'running' as RunStatus },
+                      { label: t('workspace.status.cancelled', 'Cancelled'), color: '#d29922', value: active.cancelled, status: 'cancelled' as RunStatus },
                     ].map((item) => {
                       const pct = active.total > 0 ? Math.round((item.value / active.total) * 100) : 0
                       return (
@@ -886,15 +887,15 @@ export function Analytics(): JSX.Element {
             {/* ── Success rate bar ─────────────────────────────────────── */}
             <div className="rounded-xl border border-border bg-card p-4">
               <div className="flex items-center justify-between mb-3">
-                <h2 className="text-sm font-semibold">Desempenho geral</h2>
-                <span className="text-[11px] text-muted-foreground">{active.total} runs no período selecionado</span>
+                <h2 className="text-sm font-semibold">{t('workspace.analytics.performance_title', 'General performance')}</h2>
+                <span className="text-[11px] text-muted-foreground">{t('workspace.analytics.runs_in_period_count', { count: active.total, defaultValue: `${active.total} runs in selected period` })}</span>
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
                 {[
-                  { label: 'Sucesso', value: active.success, color: 'text-[#3fb950]', icon: CheckCircle2, bg: 'bg-[#3fb950]/8', status: 'success' as RunStatus },
-                  { label: 'Falha', value: active.failure, color: 'text-[#f85149]', icon: XCircle, bg: 'bg-[#f85149]/8', status: 'failure' as RunStatus },
-                  { label: 'Executando', value: active.running, color: 'text-[#58a6ff]', icon: Loader2, bg: 'bg-[#58a6ff]/8', status: 'running' as RunStatus },
-                  { label: 'Cancelado', value: active.cancelled, color: 'text-[#d29922]', icon: Clock, bg: 'bg-[#d29922]/8', status: 'cancelled' as RunStatus },
+                  { label: t('workspace.status.success', 'Success'), value: active.success, color: 'text-[#3fb950]', icon: CheckCircle2, bg: 'bg-[#3fb950]/8', status: 'success' as RunStatus },
+                  { label: t('workspace.status.failure', 'Failure'), value: active.failure, color: 'text-[#f85149]', icon: XCircle, bg: 'bg-[#f85149]/8', status: 'failure' as RunStatus },
+                  { label: t('workspace.status.running', 'Running'), value: active.running, color: 'text-[#58a6ff]', icon: Loader2, bg: 'bg-[#58a6ff]/8', status: 'running' as RunStatus },
+                  { label: t('workspace.status.cancelled', 'Cancelled'), value: active.cancelled, color: 'text-[#d29922]', icon: Clock, bg: 'bg-[#d29922]/8', status: 'cancelled' as RunStatus },
                 ].map((item) => (
                   <div
                     key={item.label}
@@ -915,7 +916,7 @@ export function Analytics(): JSX.Element {
               </div>
               <div className="space-y-1.5">
                 <div className="flex justify-between text-[11px] text-muted-foreground">
-                  <span>Taxa de sucesso</span>
+                  <span>{t('workspace.analytics.success_rate_label', 'Success rate')}</span>
                   <span className="font-semibold text-foreground">{active.rate}%</span>
                 </div>
                 <div className="h-2 rounded-full bg-muted overflow-hidden">
@@ -929,22 +930,22 @@ export function Analytics(): JSX.Element {
             {repoStats.length > 0 && (
               <div className="rounded-xl border border-border bg-card overflow-hidden">
                 <div className="px-4 py-3 border-b border-border flex items-center justify-between">
-                  <h2 className="text-sm font-semibold">Por repositório</h2>
-                  <span className="text-[11px] text-muted-foreground">{repoStats.length} repos · clique para filtrar</span>
+                  <h2 className="text-sm font-semibold">{t('workspace.analytics.by_repo_title', 'By repository')}</h2>
+                  <span className="text-[11px] text-muted-foreground">{t('workspace.analytics.click_to_filter', { count: repoStats.length, defaultValue: `${repoStats.length} repos \u00b7 click to filter` })}</span>
                 </div>
                 <table className="w-full">
                   <thead>
                     <tr className="border-b border-border bg-muted/20">
                       <th className="px-4 py-2.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider text-left">
-                        Repositório
+                        {t('common.repository', 'Repository')}
                       </th>
-                      <SortHeader label="Total" field="total" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
-                      <SortHeader label="Sucesso" field="success" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
-                      <SortHeader label="Falha" field="failure" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
+                      <SortHeader label={t('common.total', 'Total')} field="total" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
+                      <SortHeader label={t('workspace.status.success', 'Success')} field="success" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
+                      <SortHeader label={t('workspace.status.failure', 'Failure')} field="failure" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
                       {source === 'orbit' && (
                         <SortHeader label="Avg" field="avgDurationMs" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
                       )}
-                      <SortHeader label="Taxa" field="rate" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} align="left" />
+                      <SortHeader label={t('workspace.analytics.rate_label', 'Rate')} field="rate" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} align="left" />
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
@@ -1004,11 +1005,11 @@ export function Analytics(): JSX.Element {
                 ) : (
                   <BarChart2 className="h-10 w-10 text-muted-foreground/20 mb-3" />
                 )}
-                <h3 className="text-base font-semibold">Nenhum dado no período</h3>
+                <h3 className="text-base font-semibold">{t('workspace.analytics.no_data_title', 'No data in period')}</h3>
                 <p className="text-muted-foreground text-sm mt-1 max-w-xs">
                   {source === 'github'
-                    ? 'Configure um token GitHub nas configurações para carregar execuções remotas'
-                    : 'Execute um workflow local para ver as estatísticas aqui'}
+                    ? t('workspace.analytics.no_data_desc_gh', 'Configure a GitHub token in settings to load remote executions')
+                    : t('workspace.analytics.no_data_desc_orbit', 'Run a local workflow to see statistics here')}
                 </p>
               </div>
             )}

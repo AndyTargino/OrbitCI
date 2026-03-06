@@ -1,13 +1,15 @@
 import { useState, useCallback } from 'react'
 import {
   GitCommit, GitBranch, ArrowUp, ArrowDown, RefreshCw, Loader2,
-  ChevronDown, ChevronRight, Minus, Plus, GitMerge, File, Undo2
+  ChevronDown, ChevronRight, Minus, Plus, GitMerge, Undo2,
+  File
 } from 'lucide-react'
 import { electron } from '@/lib/electron'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { notify } from '@/lib/notify'
 import { cn } from '@/lib/utils'
+import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import type { GitStatus, GitFile } from '@shared/types'
 
 // ── Diff renderer ─────────────────────────────────────────────────────────────
@@ -374,6 +376,8 @@ export function GitPanel({ repoId, gitStatus, onRefresh }: Props): JSX.Element {
   const [isDiffLoading, setIsDiffLoading] = useState(false)
   const [stagedCollapsed, setStagedCollapsed] = useState(false)
   const [changesCollapsed, setChangesCollapsed] = useState(false)
+  const [confirmDiscard, setConfirmDiscard] = useState<string | null>(null)
+  const [confirmDiscardAll, setConfirmDiscardAll] = useState(false)
 
   const selectFile = useCallback(async (path: string) => {
     setSelectedFile(path)
@@ -412,13 +416,22 @@ export function GitPanel({ repoId, gitStatus, onRefresh }: Props): JSX.Element {
   }
 
   const handleDiscard = async (file: string) => {
-    await electron.git.discard(repoId, [file])
+    setConfirmDiscard(file)
+  }
+
+  const executeDiscard = async () => {
+    if (!confirmDiscard) return
+    await electron.git.discard(repoId, [confirmDiscard])
     setSelectedFile(null)
     setDiff('')
     onRefresh()
   }
 
   const handleDiscardAll = async () => {
+    setConfirmDiscardAll(true)
+  }
+
+  const executeDiscardAll = async () => {
     await electron.git.discardAll(repoId)
     setSelectedFile(null)
     setDiff('')
@@ -721,6 +734,37 @@ export function GitPanel({ repoId, gitStatus, onRefresh }: Props): JSX.Element {
           )}
         </div>
       </div>
+
+      {/* Confirm discard single file */}
+      <ConfirmDialog
+        open={confirmDiscard !== null}
+        onOpenChange={(open) => { if (!open) setConfirmDiscard(null) }}
+        title="Descartar alterações"
+        description={`Tem certeza que deseja descartar as alterações em "${confirmDiscard?.split('/').pop()}"?`}
+        consequences={[
+          'Todas as modificações não salvas neste arquivo serão perdidas permanentemente',
+          'Esta ação não pode ser desfeita'
+        ]}
+        confirmLabel="Descartar"
+        variant="destructive"
+        onConfirm={executeDiscard}
+      />
+
+      {/* Confirm discard all */}
+      <ConfirmDialog
+        open={confirmDiscardAll}
+        onOpenChange={setConfirmDiscardAll}
+        title="Descartar todas as alterações"
+        description="Tem certeza que deseja descartar TODAS as alterações pendentes?"
+        consequences={[
+          `${allChanges.length} arquivo(s) serão revertidos ao último estado do commit`,
+          'Todas as modificações não salvas serão perdidas permanentemente',
+          'Esta ação não pode ser desfeita'
+        ]}
+        confirmLabel="Descartar tudo"
+        variant="destructive"
+        onConfirm={executeDiscardAll}
+      />
     </div>
   )
 }

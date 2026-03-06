@@ -1,11 +1,10 @@
-import { contextBridge, ipcRenderer } from 'electron'
-import { IPC_CHANNELS } from '../shared/constants'
+import { contextBridge, ipcRenderer } from 'electron';
+import { IPC_CHANNELS } from '../shared/constants';
 import type {
+  AppSettings,
   Repo,
-  GitHubRepo,
-  RunFilter,
-  AppSettings
-} from '../shared/types'
+  RunFilter
+} from '../shared/types';
 
 const api = {
   // ─── Window ────────────────────────────────────────────────────────────────
@@ -40,7 +39,11 @@ const api = {
     checkGithubWorkflows: (localPath: string) => ipcRenderer.invoke(IPC_CHANNELS.REPOS_CHECK_GITHUB_WORKFLOWS, localPath),
     importGithubWorkflows: (localPath: string) => ipcRenderer.invoke(IPC_CHANNELS.REPOS_IMPORT_GITHUB_WORKFLOWS, localPath),
     listGithubWorkflows: (localPath: string) => ipcRenderer.invoke(IPC_CHANNELS.REPOS_LIST_GITHUB_WORKFLOWS, localPath),
-    findLocal: (repoName: string) => ipcRenderer.invoke(IPC_CHANNELS.REPOS_FIND_LOCAL, repoName)
+    findLocal: (repoName: string) => ipcRenderer.invoke(IPC_CHANNELS.REPOS_FIND_LOCAL, repoName),
+    getGithubWorkflowContent: (localPath: string, file: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.REPOS_GET_GITHUB_WORKFLOW_CONTENT, localPath, file),
+    importGithubWorkflowsSelective: (localPath: string, files: string[]) =>
+      ipcRenderer.invoke(IPC_CHANNELS.REPOS_IMPORT_GITHUB_WORKFLOWS_SELECTIVE, localPath, files)
   },
 
   // ─── Workflows ─────────────────────────────────────────────────────────────
@@ -67,6 +70,7 @@ const api = {
     cancel: (runId: string) => ipcRenderer.invoke(IPC_CHANNELS.RUNS_CANCEL, runId),
     getMetrics: (runId: string, jobName?: string, stepName?: string) =>
       ipcRenderer.invoke(IPC_CHANNELS.RUNS_GET_METRICS, runId, jobName, stepName),
+    getJobGraph: (runId: string) => ipcRenderer.invoke(IPC_CHANNELS.RUNS_GET_JOB_GRAPH, runId),
     listGitHub: (repoId: string, perPage?: number, page?: number, status?: string) =>
       ipcRenderer.invoke(IPC_CHANNELS.GITHUB_RUNS_LIST, repoId, perPage, page, status),
     listGitHubRunJobs: (repoId: string, runId: number) =>
@@ -78,7 +82,7 @@ const api = {
   // ─── Git ───────────────────────────────────────────────────────────────────
   git: {
     status: (repoId: string) => ipcRenderer.invoke(IPC_CHANNELS.GIT_STATUS, repoId),
-    diff: (repoId: string, file?: string) => ipcRenderer.invoke(IPC_CHANNELS.GIT_DIFF, repoId, file),
+    diff: (repoId: string, file?: string, staged = false) => ipcRenderer.invoke(IPC_CHANNELS.GIT_DIFF, repoId, file, staged),
     stage: (repoId: string, files: string[]) => ipcRenderer.invoke(IPC_CHANNELS.GIT_STAGE, repoId, files),
     stageAll: (repoId: string) => ipcRenderer.invoke(IPC_CHANNELS.GIT_STAGE_ALL, repoId),
     unstage: (repoId: string, files: string[]) => ipcRenderer.invoke(IPC_CHANNELS.GIT_UNSTAGE, repoId, files),
@@ -122,7 +126,9 @@ const api = {
     unstageAll: (repoId: string) =>
       ipcRenderer.invoke(IPC_CHANNELS.GIT_UNSTAGE_ALL, repoId),
     diffStaged: (repoId: string, file?: string) =>
-      ipcRenderer.invoke(IPC_CHANNELS.GIT_DIFF_STAGED, repoId, file)
+      ipcRenderer.invoke(IPC_CHANNELS.GIT_DIFF_STAGED, repoId, file),
+    showCommit: (repoId: string, sha: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.GIT_SHOW_COMMIT, repoId, sha)
   },
 
   // ─── Docker ────────────────────────────────────────────────────────────────
@@ -167,6 +173,9 @@ const api = {
   shell: {
     openExternal: (url: string) => ipcRenderer.invoke(IPC_CHANNELS.SHELL_OPEN_EXTERNAL, url)
   },
+
+  // ─── Platform ──────────────────────────────────────────────────────────────
+  platform: process.platform as 'win32' | 'darwin' | 'linux',
 
   // ─── Events ────────────────────────────────────────────────────────────────
   on: (channel: string, callback: (...args: unknown[]) => void) => {

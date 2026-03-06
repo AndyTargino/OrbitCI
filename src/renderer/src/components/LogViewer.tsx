@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import { useTranslation } from 'react-i18next'
 import { cn } from '@/lib/utils'
 import type { RunLog } from '@shared/types'
 
@@ -24,13 +25,14 @@ const logTypePrefix: Record<string, string> = {
   step: '  · ',
   error: '    ',
   success: '    ',
+  warning: '    ',
+  info: '    ',
   output: '    ',
-  info: '  ',
-  skip: '  ⏭ ',
-  warning: '  ⚠ '
+  skip: '    '
 }
 
 export function LogViewer({ logs, autoScroll = true, className }: LogViewerProps): JSX.Element {
+  const { t, i18n } = useTranslation()
   const bottomRef = useRef<HTMLDivElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
 
@@ -51,7 +53,7 @@ export function LogViewer({ logs, autoScroll = true, className }: LogViewerProps
       <div className="p-4 space-y-0.5 min-h-full">
         {logs.length === 0 ? (
           <div className="text-muted-foreground py-8 text-center">
-            Aguardando logs...
+            {t('workspace.runs.waiting_logs', 'Waiting for logs...')}
           </div>
         ) : (
           logs.map((log) => (
@@ -63,7 +65,7 @@ export function LogViewer({ logs, autoScroll = true, className }: LogViewerProps
               )}
             >
               <span className="text-slate-600 select-none mr-2 text-[10px]">
-                {new Date(log.timestamp).toLocaleTimeString('pt-BR', {
+                {new Date(log.timestamp).toLocaleTimeString(i18n.language, {
                   hour: '2-digit',
                   minute: '2-digit',
                   second: '2-digit'

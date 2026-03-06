@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import {
   Plus, Search, Folder, Lock, Globe, GitBranch,
   Loader2, Link, Download, Clock, MoreHorizontal,
@@ -57,18 +58,19 @@ function GithubImportDialog({
   onSkip: () => void
   onClose: () => void
 }): JSX.Element {
+  const { t } = useTranslation()
   return (
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-[15px]">
             <FileCode className="h-4 w-4 text-primary" />
-            Workflows encontrados
+            {t('workspace.repos.import_dialog.title', 'Workflows found')}
           </DialogTitle>
           <DialogDescription className="text-[13px]">
-            Este repositório já possui workflows em{' '}
+            {t('workspace.repos.import_dialog.description', 'This repository already has workflows in')} {' '}
             <code className="text-primary font-mono text-[12px]">.github/workflows/</code>.
-            Deseja importá-los para o OrbitCI?
+            {t('workspace.repos.import_dialog.offer', 'Do you want to import them to OrbitCI?')}
           </DialogDescription>
         </DialogHeader>
 
@@ -158,19 +160,19 @@ function DeleteConfirmDialog({
   onConfirm: () => void
   onClose: () => void
 }): JSX.Element {
+  const { t } = useTranslation()
   return (
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent className="max-w-sm">
         <DialogHeader>
-          <DialogTitle className="text-[15px] text-[#f85149]">Remover repositório</DialogTitle>
+          <DialogTitle className="text-[15px] text-[#f85149]">{t('workspace.repos.delete_confirm.title', 'Remove repository')}</DialogTitle>
           <DialogDescription className="text-[13px]">
-            Tem certeza que deseja remover <strong>{repoName}</strong> do OrbitCI?
-            A pasta local não será excluída, apenas o registro no OrbitCI.
+            {t('workspace.repos.delete_confirm.description', { name: repoName, defaultValue: `Are you sure you want to remove ${repoName} from OrbitCI? The local folder will not be deleted, only the record in OrbitCI.` })}
           </DialogDescription>
         </DialogHeader>
         <DialogFooter>
-          <Button variant="outline" size="sm" onClick={onClose} className="text-[12px]">Cancelar</Button>
-          <Button variant="destructive" size="sm" onClick={onConfirm} className="text-[12px]">Remover</Button>
+          <Button variant="outline" size="sm" onClick={onClose} className="text-[12px]">{t('common.cancel', 'Cancel')}</Button>
+          <Button variant="destructive" size="sm" onClick={onConfirm} className="text-[12px]">{t('common.remove', 'Remove')}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -191,18 +193,19 @@ function ScanResultsDialog({
   onLink: (repo: Repo, path: string) => void
   onClose: () => void
 }): JSX.Element {
+  const { t } = useTranslation()
   return (
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent className="max-w-lg max-h-[80vh] flex flex-col p-0 gap-0">
         <DialogHeader className="px-5 py-4 border-b border-border shrink-0">
           <DialogTitle className="flex items-center gap-2 text-[15px]">
             <ScanLine className="h-4 w-4 text-primary" />
-            Repositórios detectados localmente
+            {t('workspace.repos.scan_results.title', 'Repositories detected locally')}
           </DialogTitle>
           <DialogDescription className="text-[13px]">
             {results.length === 0
-              ? 'Nenhum repositório sem pasta encontrado localmente.'
-              : `Encontramos ${results.length} pasta${results.length !== 1 ? 's' : ''} correspondente${results.length !== 1 ? 's' : ''}. Vincule os que desejar.`}
+              ? t('workspace.repos.scan_results.empty', 'No folderless repositories found locally.')
+              : t('workspace.repos.scan_results.found', { count: results.length, defaultValue: `We found ${results.length} matching folder(s). Link the ones you want.` })}
           </DialogDescription>
         </DialogHeader>
 
@@ -221,7 +224,7 @@ function ScanResultsDialog({
                   onClick={() => onLink(repo, path)}
                 >
                   <Link className="h-3.5 w-3.5" />
-                  Vincular
+                  {t('common.link', 'Link')}
                 </Button>
               </div>
             ))}
@@ -229,7 +232,7 @@ function ScanResultsDialog({
         )}
 
         <DialogFooter className="px-5 py-3 border-t border-border shrink-0">
-          <Button variant="outline" size="sm" onClick={onClose} className="text-[12px]">Fechar</Button>
+          <Button variant="outline" size="sm" onClick={onClose} className="text-[12px]">{t('common.close', 'Close')}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -247,6 +250,7 @@ function RepoRow({
   onDeleteOrbit,
   onRemove
 }: {
+
   repo: Repo
   onClick: () => void
   onSync: () => void
@@ -256,6 +260,7 @@ function RepoRow({
   onDeleteOrbit: () => void
   onRemove: () => void
 }): JSX.Element {
+  const { t } = useTranslation()
   return (
     <div
       onClick={onClick}
@@ -279,13 +284,13 @@ function RepoRow({
           ) : (
             <span className="flex items-center gap-1 text-[#d29922]">
               <Link className="h-3 w-3" />
-              Sem pasta local
+              {t('workspace.repos.no_local_folder', 'No local folder')}
             </span>
           )}
           {repo.lastSyncAt && (
             <span className="flex items-center gap-1">
               <Clock className="h-3 w-3" />
-              {new Date(repo.lastSyncAt).toLocaleDateString('pt-BR')}
+              {new Date(repo.lastSyncAt).toLocaleDateString(undefined)}
             </span>
           )}
         </div>
@@ -307,27 +312,27 @@ function RepoRow({
             <>
               <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onOpenFolder() }}>
                 <FolderOpen className="h-3.5 w-3.5 mr-2" />
-                Abrir pasta
+                {t('common.open_folder', 'Open folder')}
               </DropdownMenuItem>
               <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onUnlink() }}>
                 <Unlink className="h-3.5 w-3.5 mr-2" />
-                Desvincular pasta
+                {t('workspace.repos.unlink_folder', 'Unlink folder')}
               </DropdownMenuItem>
             </>
           ) : (
             <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onLinkFolder() }}>
               <Link className="h-3.5 w-3.5 mr-2" />
-              Vincular pasta
+              {t('workspace.repos.link_folder', 'Link folder')}
             </DropdownMenuItem>
           )}
           <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onSync() }}>
             <RefreshCw className="h-3.5 w-3.5 mr-2" />
-            Sincronizar
+            {t('common.sync', 'Sync')}
           </DropdownMenuItem>
           {repo.localPath && (
             <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onDeleteOrbit() }}>
               <Trash2 className="h-3.5 w-3.5 mr-2" />
-              Excluir pasta .orbit
+              {t('workspace.repos.delete_orbit_btn', 'Delete .orbit folder')}
             </DropdownMenuItem>
           )}
           <DropdownMenuSeparator />
@@ -336,7 +341,7 @@ function RepoRow({
             onClick={(e) => { e.stopPropagation(); onRemove() }}
           >
             <Trash2 className="h-3.5 w-3.5 mr-2" />
-            Remover do OrbitCI
+            {t('workspace.repos.remove_btn', 'Remove from OrbitCI')}
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
@@ -346,6 +351,7 @@ function RepoRow({
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 export function Repos(): JSX.Element {
+  const { t } = useTranslation()
   const navigate = useNavigate()
   const { repos, addRepo, updateRepo, removeRepo } = useRepoStore()
   const [search, setSearch] = useState('')
@@ -384,7 +390,7 @@ export function Repos(): JSX.Element {
       const list = await electron.repos.listGitHub()
       setGithubRepos(list)
     } catch {
-      notify('failure', 'Erro ao carregar repositórios', 'Não foi possível carregar repositórios do GitHub')
+      notify('failure', t('workspace.repos.error_load_title', 'Error loading repositories'), t('workspace.repos.error_load_desc', 'Could not load repositories from GitHub'))
     } finally {
       setIsLoadingGitHub(false)
     }
@@ -654,9 +660,9 @@ export function Repos(): JSX.Element {
       <div className="border-b border-border px-6 py-4 bg-card/30">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-[18px] font-semibold">Repositórios</h1>
+            <h1 className="text-[18px] font-semibold">{t('nav.repos', 'Repositories')}</h1>
             <p className="text-[12px] text-muted-foreground mt-0.5">
-              {repos.length} repositório{repos.length !== 1 ? 's' : ''} monitorado{repos.length !== 1 ? 's' : ''}
+              {t('workspace.repos.monitored_count', { count: repos.length, defaultValue: `${repos.length} monitored repositories` })}
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -672,12 +678,12 @@ export function Repos(): JSX.Element {
                   ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
                   : <ScanLine className="h-3.5 w-3.5" />
                 }
-                Detectar local
+                {t('workspace.repos.scan_local_btn', 'Detect local')}
               </Button>
             )}
             <Button onClick={handleOpenAddDialog} size="sm" className="h-8 text-[13px]">
               <Plus className="h-3.5 w-3.5" />
-              Adicionar
+              {t('common.add', 'Add')}
             </Button>
           </div>
         </div>
@@ -688,7 +694,7 @@ export function Repos(): JSX.Element {
         <div className="relative max-w-[220px] flex-1">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
           <Input
-            placeholder="Buscar repositório..."
+            placeholder={t('nav.filter_repos', 'Search repository...')}
             className="h-8 pl-8 text-[13px] bg-input/50"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -707,7 +713,7 @@ export function Repos(): JSX.Element {
                   : 'bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground'
               )}
             >
-              Todos
+              {t('workspace.status.all', 'All')}
             </button>
             {owners.map((owner) => (
               <button
@@ -739,7 +745,7 @@ export function Repos(): JSX.Element {
                   : 'text-muted-foreground hover:text-foreground'
               )}
             >
-              {f === 'all' ? 'Todos' : f === 'local' ? 'Com pasta' : 'Sem pasta'}
+              {f === 'all' ? t('workspace.status.all', 'All') : f === 'local' ? t('workspace.repos.with_folder', 'With folder') : t('workspace.repos.without_folder', 'Without folder')}
             </button>
           ))}
         </div>
@@ -753,17 +759,17 @@ export function Repos(): JSX.Element {
               <GitBranch className="h-7 w-7 text-muted-foreground" />
             </div>
             <h3 className="font-semibold">
-              {repos.length === 0 ? 'Nenhum repositório' : 'Nenhum resultado'}
+              {repos.length === 0 ? t('workspace.repos.empty_title', 'No repositories') : t('workspace.repos.no_results_title', 'No results')}
             </h3>
             <p className="text-[13px] text-muted-foreground mt-1">
               {repos.length === 0
-                ? 'Adicione um repositório para começar a monitorar workflows'
-                : 'Tente ajustar os filtros'}
+                ? t('workspace.repos.empty_desc', 'Add a repository to start monitoring workflows')
+                : t('common.try_adjust_filters', 'Try adjusting the filters')}
             </p>
             {repos.length === 0 && (
               <Button className="mt-5 h-8 text-[13px]" onClick={handleOpenAddDialog}>
                 <Plus className="h-3.5 w-3.5" />
-                Adicionar Repositório
+                {t('workspace.repos.add_repo_btn', 'Add Repository')}
               </Button>
             )}
           </div>
@@ -807,9 +813,9 @@ export function Repos(): JSX.Element {
       <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
         <DialogContent className="max-w-2xl max-h-[80vh] flex flex-col p-0 gap-0">
           <DialogHeader className="px-5 py-4 border-b border-border shrink-0">
-            <DialogTitle className="text-[15px]">Adicionar Repositório</DialogTitle>
+            <DialogTitle className="text-[15px]">{t('workspace.repos.add_dialog_title', 'Add Repository')}</DialogTitle>
             <DialogDescription className="text-[12px]">
-              Selecione um repositório do GitHub para monitorar workflows
+              {t('workspace.repos.add_dialog_desc', 'Select a GitHub repository to monitor workflows')}
             </DialogDescription>
           </DialogHeader>
 
@@ -817,7 +823,7 @@ export function Repos(): JSX.Element {
             <div className="relative">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
               <Input
-                placeholder="Buscar no GitHub..."
+                placeholder={t('workspace.repos.search_github_placeholder', 'Search on GitHub...')}
                 className="h-8 pl-8 text-[13px]"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
@@ -938,15 +944,14 @@ export function Repos(): JSX.Element {
       <Dialog open={!!orbitDeleteRepo} onOpenChange={() => setOrbitDeleteRepo(null)}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle className="text-[15px]">Excluir pasta .orbit</DialogTitle>
+            <DialogTitle className="text-[15px]">{t('workspace.repos.delete_orbit_title', 'Delete .orbit folder')}</DialogTitle>
             <DialogDescription className="text-[13px]">
-              Tem certeza? Isso removerá todos os workflows e artefatos locais de{' '}
-              <strong>{orbitDeleteRepo?.fullName}</strong>.
+              {t('workspace.repos.delete_orbit_desc', { name: orbitDeleteRepo?.fullName, defaultValue: `Are you sure? This will remove all local workflows and artifacts from ${orbitDeleteRepo?.fullName}.` })}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button variant="outline" size="sm" onClick={() => setOrbitDeleteRepo(null)} className="text-[12px]">
-              Cancelar
+              {t('common.cancel', 'Cancel')}
             </Button>
             <Button
               variant="destructive"
@@ -954,7 +959,7 @@ export function Repos(): JSX.Element {
               onClick={() => orbitDeleteRepo && handleDeleteOrbit(orbitDeleteRepo)}
               className="text-[12px]"
             >
-              Excluir
+              {t('common.delete', 'Delete')}
             </Button>
           </DialogFooter>
         </DialogContent>

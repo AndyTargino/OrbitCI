@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useTranslation } from 'react-i18next'
 import * as DialogPrimitive from '@radix-ui/react-dialog'
 import { DialogPortal, DialogOverlay, DialogClose } from '@/components/ui/dialog'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -10,7 +11,9 @@ import {
 import { electron } from '@/lib/electron'
 import { cn } from '@/lib/utils'
 import { ResourceChart } from './ResourceChart'
-import type { GitHubRun, Run, RunStep, MetricSample } from '@shared/types'
+import { WorkflowGraph } from './shared/WorkflowGraph'
+import { ConfirmDialog } from './shared/ConfirmDialog'
+import type { GitHubRun, Run, RunJob, RunStep, MetricSample, JobGraphNode } from '@shared/types'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type InternalJob = {
@@ -51,14 +54,14 @@ function fmtDuration(a: string | null, b: string | null): string {
   return rem > 0 ? `${m}m ${rem}s` : `${m}m`
 }
 
-function fmtRelative(dateStr: string): string {
+function fmtRelative(dateStr: string, t: any): string {
   const s = Math.floor((Date.now() - new Date(dateStr).getTime()) / 1000)
-  if (s < 60) return 'agora mesmo'
+  if (s < 60) return t('common.time.just_now', 'just now')
   const m = Math.floor(s / 60)
-  if (m < 60) return `há ${m}m`
+  if (m < 60) return t('common.time.minutes_ago', { count: m, defaultValue: `${m}m ago` })
   const h = Math.floor(m / 60)
-  if (h < 24) return `há ${h}h`
-  return `há ${Math.floor(h / 24)}d`
+  if (h < 24) return t('common.time.hours_ago', { count: h, defaultValue: `${h}h ago` })
+  return t('common.time.days_ago', { count: Math.floor(h / 24), defaultValue: `${Math.floor(h / 24)}d ago` })
 }
 
 // ─── Status helpers ───────────────────────────────────────────────────────────
@@ -88,12 +91,22 @@ function StatusIcon({ status, conclusion, size = 'sm' }: {
 }
 
 function StatusBadge({ status, conclusion }: { status: string; conclusion: string | null }): JSX.Element {
+  const { t } = useTranslation()
   let cls = 'text-muted-foreground bg-muted/40 border-border/40'
   let label = conclusion ?? status
-  if (isRunning(status)) { cls = 'text-[#e3b341] bg-[#e3b341]/10 border-[#e3b341]/30'; label = 'executando' }
-  else if (isSuccess(status, conclusion)) { cls = 'text-[#3fb950] bg-[#3fb950]/10 border-[#3fb950]/30'; label = 'sucesso' }
-  else if (isFailed(status, conclusion)) { cls = 'text-[#f85149] bg-[#f85149]/10 border-[#f85149]/30'; label = 'falhou' }
-  else if (conclusion === 'cancelled') { cls = 'text-muted-foreground bg-muted/40 border-border/40'; label = 'cancelado' }
+  if (isRunning(status)) { 
+    cls = 'text-[#e3b341] bg-[#e3b341]/10 border-[#e3b341]/30'
+    label = t('workspace.status.running', 'running')
+  } else if (isSuccess(status, conclusion)) { 
+    cls = 'text-[#3fb950] bg-[#3fb950]/10 border-[#3fb950]/30'
+    label = t('workspace.status.success', 'success')
+  } else if (isFailed(status, conclusion)) { 
+    cls = 'text-[#f85149] bg-[#f85149]/10 border-[#f85149]/30'
+    label = t('workspace.status.failed', 'failed')
+  } else if (conclusion === 'cancelled') { 
+    cls = 'text-muted-foreground bg-muted/40 border-border/40'
+    label = t('workspace.status.cancelled', 'cancelled')
+  }
   return (
     <span className={cn('inline-flex items-center px-2 py-0.5 rounded-full border text-[11px] font-semibold uppercase tracking-wide', cls)}>
       {label}
@@ -141,6 +154,7 @@ function LogLine({ line, index }: { line: string; index: number }): JSX.Element 
 
 // ─── Main component ───────────────────────────────────────────────────────────
 export function RunDetailModal({ open, onClose, source, run, repoId }: Props) {
+  const { t } = useTranslation()
   const [jobs, setJobs] = useState<InternalJob[]>([])
   const [loadingJobs, setLoadingJobs] = useState(false)
   const [hasError, setHasError] = useState(false)
@@ -150,12 +164,15 @@ export function RunDetailModal({ open, onClose, source, run, repoId }: Props) {
   const [jobLogCache, setJobLogCache] = useState<Map<string | number, Map<number, string[]>>>(new Map())
   const [loadingJobLog, setLoadingJobLog] = useState(false)
   const [cancelling, setCancelling] = useState(false)
+  const [confirmCancel, setConfirmCancel] = useState(false)
   const [rerunning, setRerunning] = useState(false)
   const [activeTab, setActiveTab] = useState<'logs' | 'resources'>('logs')
   const [metrics, setMetrics] = useState<MetricSample[]>([])
   const [stepsWithMetrics, setStepsWithMetrics] = useState<RunStep[]>([])
   const [metricsFilter, setMetricsFilter] = useState<{ jobName?: string; stepName?: string }>({})
   const [loadingMetrics, setLoadingMetrics] = useState(false)
+  const [jobGraph, setJobGraph] = useState<JobGraphNode[]>([])
+  const [rawJobs, setRawJobs] = useState<RunJob[]>([])
 
   const selectedJob = jobs.find((j) => j.id === selectedJobId) ?? null
 
@@ -173,6 +190,8 @@ export function RunDetailModal({ open, onClose, source, run, repoId }: Props) {
     setMetrics([])
     setStepsWithMetrics([])
     setMetricsFilter({})
+    setJobGraph([])
+    setRawJobs([])
 
     if (source === 'github') {
       const ghRun = run as GitHubRun
@@ -205,9 +224,13 @@ export function RunDetailModal({ open, onClose, source, run, repoId }: Props) {
       Promise.all([
         electron.runs.getJobs(orbitRun.id),
         electron.runs.getSteps(orbitRun.id),
-        electron.runs.getLogs(orbitRun.id)
+        electron.runs.getLogs(orbitRun.id),
+        electron.runs.getJobGraph(orbitRun.id)
       ])
-        .then(([rawJobs, rawSteps, rawLogs]) => {
+        .then(([fetchedJobs, rawSteps, rawLogs, graph]) => {
+          setRawJobs(fetchedJobs)
+          setJobGraph(graph)
+          const rawJobs = fetchedJobs
           const logsMap = new Map<string, string[]>()
           for (const log of rawLogs) {
             const key = `${log.jobName ?? ''}::${log.stepName ?? ''}`
@@ -324,7 +347,12 @@ export function RunDetailModal({ open, onClose, source, run, repoId }: Props) {
     })
   }, [])
 
-  const handleCancel = async () => {
+  const handleCancel = () => {
+    if (!run || source !== 'orbit') return
+    setConfirmCancel(true)
+  }
+
+  const executeCancel = async () => {
     if (!run || source !== 'orbit') return
     setCancelling(true)
     try { await electron.runs.cancel((run as Run).id) } finally { setCancelling(false) }
@@ -355,6 +383,7 @@ export function RunDetailModal({ open, onClose, source, run, repoId }: Props) {
   const isOrbitRunning = !isGitHub && orbitRun!.status === 'running'
 
   return (
+    <>
     <DialogPrimitive.Root open={open} onOpenChange={(v) => !v && onClose()}>
       <DialogPortal>
         <DialogOverlay />
@@ -380,7 +409,7 @@ export function RunDetailModal({ open, onClose, source, run, repoId }: Props) {
                   </span>
                 )}
                 <span className="flex items-center gap-1">
-                  <Clock className="h-3 w-3" />{fmtRelative(runCreatedAt)}
+                  <Clock className="h-3 w-3" />{fmtRelative(runCreatedAt, t)}
                 </span>
                 {isGitHub && ghRun!.actor && (
                   <span className="flex items-center gap-1.5">
@@ -406,7 +435,7 @@ export function RunDetailModal({ open, onClose, source, run, repoId }: Props) {
                   className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[11px] font-medium text-[#f85149] hover:bg-[#f85149]/10 border border-[#f85149]/30 transition-colors disabled:opacity-50"
                 >
                   {cancelling ? <Loader2 className="h-3 w-3 animate-spin" /> : <StopCircle className="h-3 w-3" />}
-                  Cancelar
+                  {t('common.cancel', 'Cancel')}
                 </button>
               )}
 
@@ -418,7 +447,7 @@ export function RunDetailModal({ open, onClose, source, run, repoId }: Props) {
                   className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[11px] font-medium text-[#8b949e] hover:bg-[#21262d] border border-[#30363d] transition-colors disabled:opacity-50"
                 >
                   {rerunning ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
-                  Re-executar
+                  {t('common.rerun', 'Re-run')}
                 </button>
               )}
 
@@ -429,7 +458,7 @@ export function RunDetailModal({ open, onClose, source, run, repoId }: Props) {
                   className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[11px] font-medium text-[#8b949e] hover:bg-[#21262d] border border-[#30363d] transition-colors"
                 >
                   <ExternalLink className="h-3 w-3" />
-                  Ver no GitHub
+                  {t('common.view_github', 'View on GitHub')}
                 </button>
               )}
 
@@ -454,7 +483,7 @@ export function RunDetailModal({ open, onClose, source, run, repoId }: Props) {
                     : 'border-transparent text-[#8b949e] hover:text-[#c9d1d9]'
                 )}
               >
-                Logs
+                {t('common.logs', 'Logs')}
               </button>
               <button
                 onClick={() => setActiveTab('resources')}
@@ -466,8 +495,24 @@ export function RunDetailModal({ open, onClose, source, run, repoId }: Props) {
                 )}
               >
                 <Cpu className="h-3 w-3" />
-                Recursos
+                {t('common.resources', 'Resources')}
               </button>
+            </div>
+          )}
+
+          {/* ── Workflow Graph ────────────────────────────────────────── */}
+          {jobGraph.length > 1 && activeTab === 'logs' && (
+            <div className="border-b border-[#30363d] bg-[#0d1117] px-4 py-3 shrink-0">
+              <WorkflowGraph
+                graph={jobGraph}
+                jobs={rawJobs}
+                selectedJob={selectedJob?.name ?? null}
+                onJobClick={(jobName) => {
+                  const job = jobs.find((j) => j.name === jobName)
+                  if (job) setSelectedJobId(job.id)
+                }}
+                className="max-h-[140px]"
+              />
             </div>
           )}
 
@@ -487,7 +532,7 @@ export function RunDetailModal({ open, onClose, source, run, repoId }: Props) {
             {/* Sidebar: jobs */}
             <div className="w-56 shrink-0 border-r border-[#30363d] flex flex-col bg-[#0d1117]">
               <div className="px-3.5 py-2.5 text-[10px] font-bold uppercase tracking-widest text-[#8b949e]/70 border-b border-[#30363d]/60">
-                Jobs
+                {t('workspace.runs.jobs_label', 'Jobs')}
               </div>
               <ScrollArea className="flex-1">
                 {loadingJobs ? (
@@ -496,10 +541,10 @@ export function RunDetailModal({ open, onClose, source, run, repoId }: Props) {
                   </div>
                 ) : hasError ? (
                   <div className="px-3.5 py-4 text-xs text-[#f85149]">
-                    Erro ao carregar jobs
+                    {t('workspace.runs.error_load_jobs', 'Error loading jobs')}
                   </div>
                 ) : jobs.length === 0 ? (
-                  <div className="px-3.5 py-4 text-xs text-[#8b949e]">Nenhum job encontrado</div>
+                  <div className="px-3.5 py-4 text-xs text-[#8b949e]">{t('workspace.runs.no_jobs_found', 'No jobs found')}</div>
                 ) : (
                   <div className="py-1.5">
                     {jobs.map((job) => {
@@ -538,16 +583,16 @@ export function RunDetailModal({ open, onClose, source, run, repoId }: Props) {
                   {hasError ? (
                     <>
                       <AlertCircle className="h-8 w-8 text-[#f85149]/50" />
-                      <p className="text-sm">Falha ao carregar detalhes</p>
+                      <p className="text-sm">{t('workspace.runs.error_load_details', 'Failed to load details')}</p>
                       <button
                         onClick={() => {}}
                         className="text-xs text-primary underline underline-offset-2"
                       >
-                        Tentar novamente
+                        {t('common.try_again', 'Try again')}
                       </button>
                     </>
                   ) : (
-                    <p className="text-sm">Selecione um job</p>
+                    <p className="text-sm">{t('workspace.runs.select_job_prompt', 'Select a job')}</p>
                   )}
                 </div>
               ) : loadingJobs ? (
@@ -560,11 +605,11 @@ export function RunDetailModal({ open, onClose, source, run, repoId }: Props) {
                     {loadingJobLog && (
                       <div className="flex items-center gap-2 px-4 py-2 text-[11px] text-[#8b949e]/70">
                         <Loader2 className="h-3 w-3 animate-spin" />
-                        Carregando logs…
+                        {t('workspace.runs.loading_logs', 'Loading logs…')}
                       </div>
                     )}
                     {selectedJob!.steps.length === 0 ? (
-                      <div className="px-4 py-8 text-center text-sm text-[#8b949e]">Nenhum passo registrado</div>
+                      <div className="px-4 py-8 text-center text-sm text-[#8b949e]">{t('workspace.runs.no_steps_found', 'No steps recorded')}</div>
                     ) : (
                       selectedJob!.steps.map((step) => {
                         const expanded = expandedSteps.has(step.id)
@@ -608,7 +653,7 @@ export function RunDetailModal({ open, onClose, source, run, repoId }: Props) {
                                   : 'text-[#c9d1d9]'
                               )}>
                                 {step.name}
-                                {skipped && <span className="ml-2 text-[10px] font-normal text-[#8b949e]/50">ignorado</span>}
+                                {skipped && <span className="ml-2 text-[10px] font-normal text-[#8b949e]/50">{t('workspace.status.skipped', 'skipped')}</span>}
                               </span>
                               {step.startedAt && step.completedAt && (
                                 <span className="text-[10px] tabular-nums text-[#8b949e]/60 shrink-0">
@@ -621,7 +666,7 @@ export function RunDetailModal({ open, onClose, source, run, repoId }: Props) {
                             {expanded && (
                               <div className="bg-[#010409] border-t border-[#21262d] overflow-x-auto">
                                 {lines.length === 0 ? (
-                                  <p className="px-12 py-3 text-[11px] text-[#8b949e]/50 font-mono">Sem logs disponíveis</p>
+                                  <p className="px-12 py-3 text-[11px] text-[#8b949e]/50 font-mono">{t('workspace.runs.no_logs_found', 'No logs available')}</p>
                                 ) : (
                                   lines.map((line, i) => <LogLine key={i} line={line} index={i} />)
                                 )}
@@ -640,6 +685,22 @@ export function RunDetailModal({ open, onClose, source, run, repoId }: Props) {
         </DialogPrimitive.Content>
       </DialogPortal>
     </DialogPrimitive.Root>
+
+    <ConfirmDialog
+      open={confirmCancel}
+      onOpenChange={setConfirmCancel}
+      title={t('workspace.runs.cancel_title', 'Cancel execution')}
+      description={t('workspace.runs.cancel_desc', { workflow: orbitRun?.workflowName ?? orbitRun?.workflowFile ?? 'workflow', defaultValue: `Are you sure you want to cancel the execution of "${orbitRun?.workflowName ?? orbitRun?.workflowFile ?? 'workflow'}"?` })}
+      consequences={[
+        t('workspace.runs.cancel_cons1', 'The execution will be stopped immediately'),
+        t('workspace.runs.cancel_cons2', 'In-progress jobs will finish with "cancelled" status'),
+        t('workspace.runs.cancel_cons3', 'Partial changes made by the run will not be reverted')
+      ]}
+      confirmLabel={t('workspace.runs.cancel_btn', 'Cancel execution')}
+      variant="destructive"
+      onConfirm={executeCancel}
+    />
+    </>
   )
 }
 
@@ -659,6 +720,8 @@ function ResourcesPanel({ metrics, steps, loading, run, filter, onFilterChange }
   filter: { jobName?: string; stepName?: string }
   onFilterChange: (f: { jobName?: string; stepName?: string }) => void
 }) {
+  const { t } = useTranslation()
+
   const stepsWithPeaks = useMemo(() =>
     steps.filter((s) => s.peakCpuPercent != null || s.peakRamBytes != null),
     [steps]
@@ -688,7 +751,7 @@ function ResourcesPanel({ metrics, steps, loading, run, filter, onFilterChange }
           <div className="rounded-lg border border-[#30363d] bg-[#161b22] p-3 flex items-center gap-2.5">
             <Cpu className="h-4 w-4 text-blue-400 shrink-0" />
             <div>
-              <p className="text-[10px] text-[#8b949e] uppercase tracking-wide">Pico CPU</p>
+              <p className="text-[10px] text-[#8b949e] uppercase tracking-wide">{t('workspace.runs.peak_cpu', 'Peak CPU')}</p>
               <p className="text-base font-bold text-white tabular-nums">
                 {run.peakCpuPercent != null ? `${run.peakCpuPercent.toFixed(1)}%` : '—'}
               </p>
@@ -697,7 +760,7 @@ function ResourcesPanel({ metrics, steps, loading, run, filter, onFilterChange }
           <div className="rounded-lg border border-[#30363d] bg-[#161b22] p-3 flex items-center gap-2.5">
             <MemoryStick className="h-4 w-4 text-green-400 shrink-0" />
             <div>
-              <p className="text-[10px] text-[#8b949e] uppercase tracking-wide">Pico RAM</p>
+              <p className="text-[10px] text-[#8b949e] uppercase tracking-wide">{t('workspace.runs.peak_ram', 'Peak RAM')}</p>
               <p className="text-base font-bold text-white tabular-nums">
                 {run.peakRamBytes != null ? formatBytes(run.peakRamBytes) : '—'}
               </p>
@@ -706,7 +769,7 @@ function ResourcesPanel({ metrics, steps, loading, run, filter, onFilterChange }
           <div className="rounded-lg border border-[#30363d] bg-[#161b22] p-3 flex items-center gap-2.5">
             <Monitor className="h-4 w-4 text-purple-400 shrink-0" />
             <div>
-              <p className="text-[10px] text-[#8b949e] uppercase tracking-wide">Pico GPU</p>
+              <p className="text-[10px] text-[#8b949e] uppercase tracking-wide">{t('workspace.runs.peak_gpu', 'Peak GPU')}</p>
               <p className="text-base font-bold text-white tabular-nums">
                 {run.peakGpuPercent != null ? `${run.peakGpuPercent.toFixed(1)}%` : 'N/A'}
               </p>
@@ -715,7 +778,7 @@ function ResourcesPanel({ metrics, steps, loading, run, filter, onFilterChange }
           <div className="rounded-lg border border-[#30363d] bg-[#161b22] p-3 flex items-center gap-2.5">
             <Monitor className="h-4 w-4 text-purple-400 shrink-0" />
             <div>
-              <p className="text-[10px] text-[#8b949e] uppercase tracking-wide">Pico VRAM</p>
+              <p className="text-[10px] text-[#8b949e] uppercase tracking-wide">{t('workspace.runs.peak_vram', 'Peak VRAM')}</p>
               <p className="text-base font-bold text-white tabular-nums">
                 {run.peakGpuMemBytes != null ? formatBytes(run.peakGpuMemBytes) : 'N/A'}
               </p>
@@ -726,7 +789,7 @@ function ResourcesPanel({ metrics, steps, loading, run, filter, onFilterChange }
         {/* Filter by step */}
         {uniqueStepNames.length > 0 && (
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-[10px] text-[#8b949e] uppercase tracking-wide font-semibold">Filtrar:</span>
+            <span className="text-[10px] text-[#8b949e] uppercase tracking-wide font-semibold">{t('common.filter', 'Filter')}:</span>
             <button
               onClick={() => onFilterChange({})}
               className={cn(
@@ -736,7 +799,7 @@ function ResourcesPanel({ metrics, steps, loading, run, filter, onFilterChange }
                   : 'text-[#8b949e] border-[#30363d] hover:text-white hover:border-[#8b949e]/40'
               )}
             >
-              Run completo
+              {t('workspace.runs.full_run_label', 'Full run')}
             </button>
             {uniqueStepNames.map((name) => (
               <button
@@ -758,7 +821,7 @@ function ResourcesPanel({ metrics, steps, loading, run, filter, onFilterChange }
         {/* Timeline chart */}
         <div className="rounded-lg border border-[#30363d] bg-[#161b22] p-4">
           <h3 className="text-xs font-semibold text-white mb-3">
-            Timeline de recursos
+            {t('workspace.runs.resources_timeline_title', 'Resources timeline')}
             {filter.stepName && <span className="text-[#8b949e] font-normal ml-2">— {filter.stepName}</span>}
           </h3>
           <ResourceChart samples={metrics} height={220} />
@@ -768,7 +831,7 @@ function ResourcesPanel({ metrics, steps, loading, run, filter, onFilterChange }
         {stepsWithPeaks.length > 0 && (
           <div className="rounded-lg border border-[#30363d] bg-[#161b22] overflow-hidden">
             <div className="px-4 py-2.5 border-b border-[#30363d]">
-              <h3 className="text-xs font-semibold text-white">Pico por step</h3>
+              <h3 className="text-xs font-semibold text-white">{t('workspace.runs.peak_per_step_title', 'Peak per step')}</h3>
             </div>
             <table className="w-full">
               <thead>
@@ -777,7 +840,7 @@ function ResourcesPanel({ metrics, steps, loading, run, filter, onFilterChange }
                     <th key={h} className={cn(
                       'px-4 py-2 text-[10px] font-semibold text-[#8b949e] uppercase tracking-wider',
                       h === 'Step' ? 'text-left' : 'text-right'
-                    )}>{h}</th>
+                    )}>{h === 'Step' ? t('common.step', 'Step') : h}</th>
                   ))}
                 </tr>
               </thead>
@@ -819,9 +882,9 @@ function ResourcesPanel({ metrics, steps, loading, run, filter, onFilterChange }
         {metrics.length === 0 && stepsWithPeaks.length === 0 && (
           <div className="flex flex-col items-center justify-center py-12 text-center">
             <Cpu className="h-8 w-8 text-[#8b949e]/30 mb-3" />
-            <p className="text-sm text-[#8b949e]">Sem dados de recursos</p>
+            <p className="text-sm text-[#8b949e]">{t('workspace.runs.no_resource_data_title', 'No resource data')}</p>
             <p className="text-[11px] text-[#8b949e]/60 mt-1">
-              As métricas serão coletadas automaticamente nas próximas execuções
+              {t('workspace.runs.no_resource_data_desc', 'Metrics will be collected automatically in future runs')}
             </p>
           </div>
         )}

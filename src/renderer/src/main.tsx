@@ -1,10 +1,12 @@
 import './assets/globals.css'
+import './i18n' // Import i18n configuration
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App'
 import { router } from './router'
 import { useAuthStore, useRepoStore, useSettingsStore, useDockerStore } from './store'
 import { electron } from './lib/electron'
+import i18n from './i18n'
 
 async function bootstrap(): Promise<void> {
   const { setUser, setLoading } = useAuthStore.getState()
@@ -26,6 +28,11 @@ async function bootstrap(): Promise<void> {
       setRepos(repos)
       setSettings(settings)
       setStatus(dockerStatus)
+
+      // Sync i18n language with saved settings
+      if (settings.language) {
+        i18n.changeLanguage(settings.language)
+      }
     } else {
       // Not logged in — go to login page
       router.navigate('/login', { replace: true })

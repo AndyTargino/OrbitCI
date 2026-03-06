@@ -1,12 +1,13 @@
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useEffect, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import {
   History, Settings, Plus, Search, LayoutDashboard,
   Loader2, XCircle, UserCircle2,
   ChevronDown, LogOut, ArrowUp, ArrowDown, GitBranch,
   Download, RotateCcw, RefreshCw, Container
 } from 'lucide-react'
-import orbitIcon from '@/assets/icon.png'
+import orbitIcon from '@/assets/icon_dark.png'
 import { cn } from '@/lib/utils'
 import { useRepoStore, useRunsStore, useAuthStore, useUpdaterStore, useDockerStore } from '@/store'
 import type { GitSummary } from '@/store'
@@ -23,6 +24,7 @@ import { OwnerAvatar } from '@/components/shared/OwnerAvatar'
 import { StatusIcon } from '@/components/shared/StatusIcon'
 
 export function Sidebar(): JSX.Element {
+  const { t } = useTranslation()
   const navigate = useNavigate()
   const location = useLocation()
   const { repos, selectedRepoId, selectRepo, gitSummaries, setGitSummary } = useRepoStore()
@@ -144,13 +146,13 @@ export function Sidebar(): JSX.Element {
         const status = await electron.docker.status()
         setDockerStatus(status)
         if (!status.available) {
-          addDockerInstallLog({ message: 'Docker instalado, mas pode ser necessário reiniciar o computador ou iniciar o Docker Desktop.', type: 'error' })
+          addDockerInstallLog({ message: t('settings.docker.install_manual_restart', 'Docker installed, but you may need to restart your computer or start Docker Desktop.'), type: 'error' })
         }
       } else if (result.status === 'opened_browser') {
-        addDockerInstallLog({ message: 'Instalador aberto no navegador. Após instalar, clique em "Verificar".', type: 'step' })
+        addDockerInstallLog({ message: t('settings.docker.opened_browser', 'Installer opened in browser. After installing, click "Verify".'), type: 'step' })
       }
     } catch {
-      addDockerInstallLog({ message: 'Erro inesperado durante a instalação.', type: 'error' })
+      addDockerInstallLog({ message: t('settings.docker.unexpected_error', 'Unexpected error during installation.'), type: 'error' })
     } finally {
       unsub()
       setDockerInstalling(false)
@@ -161,7 +163,7 @@ export function Sidebar(): JSX.Element {
     r.name.toLowerCase().includes(search.toLowerCase())
   )
 
-  const isDashboardActive = location.pathname === '/'
+  const isDashboardActive = location.pathname === '/dashboard'
   const isActivityActive = location.pathname === '/history'
   const isSettingsActive = location.pathname === '/settings'
 
@@ -189,7 +191,7 @@ export function Sidebar(): JSX.Element {
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Filter repos..."
+            placeholder={t('nav.filter_repos', 'Filter repos...')}
             className={cn(
               'no-drag w-full rounded-[5px] bg-sidebar-accent/40 pl-6 pr-2 py-[5px]',
               'text-[12px] text-sidebar-foreground/80 placeholder:text-sidebar-foreground/30',
@@ -212,14 +214,14 @@ export function Sidebar(): JSX.Element {
               <Plus className="h-3.5 w-3.5" />
             </button>
           </TooltipTrigger>
-          <TooltipContent side="right" className="text-xs">Adicionar repositório</TooltipContent>
+          <TooltipContent side="right" className="text-xs">{t('nav.add_repo_tooltip', 'Add repository')}</TooltipContent>
         </Tooltip>
       </div>
 
       {/* ── REPOS section label ───────────────────────────────────────────── */}
       <div className="px-3.5 pt-1 pb-1 shrink-0">
         <span className="text-[10px] font-semibold uppercase tracking-widest text-sidebar-foreground/30">
-          Repos
+          {t('nav.repos_label', 'Repos')}
         </span>
       </div>
 
@@ -312,7 +314,7 @@ export function Sidebar(): JSX.Element {
                 <button
                   onClick={(e) => handleSync(e, repo.id)}
                   className="no-drag shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
-                  title="Sincronizar"
+                  title={t('nav.sync_repo_tooltip', 'Sync repository')}
                 >
                   <RefreshCw className="h-3 w-3 text-sidebar-foreground/50 hover:text-sidebar-foreground" />
                 </button>
@@ -322,19 +324,19 @@ export function Sidebar(): JSX.Element {
 
           {repos.length === 0 && (
             <div className="px-3 py-6 text-center">
-              <p className="text-[12px] text-sidebar-foreground/35">Nenhum repositório</p>
+              <p className="text-[12px] text-sidebar-foreground/35">{t('nav.no_repos', 'No repositories')}</p>
               <button
                 className="no-drag mt-1.5 text-[12px] text-primary hover:underline underline-offset-2"
                 onClick={() => navigate('/repos')}
               >
-                Adicionar
+                {t('common.add', 'Add')}
               </button>
             </div>
           )}
 
           {repos.length > 0 && filteredRepos.length === 0 && (
             <div className="px-3 py-4 text-center">
-              <p className="text-[11px] text-sidebar-foreground/35">Sem resultados para "{search}"</p>
+              <p className="text-[11px] text-sidebar-foreground/35">{t('nav.no_results_for', { search, defaultValue: `No results for "${search}"` })}</p>
             </div>
           )}
         </div>
@@ -344,12 +346,12 @@ export function Sidebar(): JSX.Element {
       <div className="shrink-0 border-t border-sidebar-border pt-1.5 pb-1 px-2">
         <div className="px-1.5 pb-1">
           <span className="text-[10px] font-semibold uppercase tracking-widest text-sidebar-foreground/30">
-            Global
+            {t('nav.global_label', 'Global')}
           </span>
         </div>
         <div className="space-y-0.5">
           <button
-            onClick={() => navigate('/')}
+            onClick={() => navigate('/dashboard')}
             className={cn(
               'no-drag flex w-full items-center gap-2.5 rounded-[5px] px-2.5 py-[7px] text-[13px] font-medium transition-colors',
               isDashboardActive
@@ -358,7 +360,7 @@ export function Sidebar(): JSX.Element {
             )}
           >
             <LayoutDashboard className={cn('h-4 w-4 shrink-0', isDashboardActive ? 'text-primary' : 'opacity-60')} />
-            Dashboard
+            {t('nav.dashboard', 'Dashboard')}
           </button>
           <button
             onClick={() => navigate('/history')}
@@ -370,7 +372,7 @@ export function Sidebar(): JSX.Element {
             )}
           >
             <History className={cn('h-4 w-4 shrink-0', isActivityActive ? 'text-primary' : 'opacity-60')} />
-            Activity
+            {t('nav.activity', 'Activity')}
           </button>
           <button
             onClick={() => navigate('/settings')}
@@ -382,7 +384,7 @@ export function Sidebar(): JSX.Element {
             )}
           >
             <Settings className={cn('h-4 w-4 shrink-0', isSettingsActive ? 'text-primary' : 'opacity-60')} />
-            Settings
+            {t('nav.settings', 'Settings')}
           </button>
         </div>
       </div>
@@ -398,12 +400,12 @@ export function Sidebar(): JSX.Element {
               <Loader2 className="h-4 w-4 text-[#58a6ff] shrink-0 mt-0.5 animate-spin" />
               <div className="min-w-0 flex-1">
                 <p className="text-[11px] font-medium text-[#58a6ff] leading-tight">
-                  Instalando Docker...
+                  {t('nav.docker.installing', 'Installing Docker...')}
                 </p>
                 <p className="text-[10px] text-sidebar-foreground/45 leading-snug mt-0.5 truncate">
                   {dockerInstallLogs.length > 0
                     ? dockerInstallLogs[dockerInstallLogs.length - 1].message
-                    : 'Aguardando...'}
+                    : t('common.waiting', 'Waiting...')}
                 </p>
               </div>
             </button>
@@ -415,10 +417,10 @@ export function Sidebar(): JSX.Element {
               <Container className="h-4 w-4 text-[#d29922] shrink-0 mt-0.5" />
               <div className="min-w-0 flex-1">
                 <p className="text-[11px] font-medium text-[#d29922] leading-tight">
-                  Docker não detectado
+                  {t('nav.docker.not_detected', 'Docker not detected')}
                 </p>
                 <p className="text-[10px] text-sidebar-foreground/45 leading-snug mt-0.5">
-                  Clique para instalar Docker
+                  {t('nav.docker.click_to_install', 'Click to install Docker')}
                 </p>
               </div>
             </button>
@@ -432,7 +434,7 @@ export function Sidebar(): JSX.Element {
           {updater.status === 'checking' && (
             <div className="flex items-center gap-2 text-[11px] text-sidebar-foreground/50">
               <Loader2 className="h-3 w-3 animate-spin shrink-0" />
-              <span>Verificando atualizações...</span>
+              <span>{t('nav.updater.checking', 'Checking for updates...')}</span>
             </div>
           )}
 
@@ -444,9 +446,9 @@ export function Sidebar(): JSX.Element {
               <Download className="h-3.5 w-3.5 text-[#8b5cf6] shrink-0" />
               <div className="min-w-0 flex-1">
                 <p className="text-[11px] font-medium text-[#8b5cf6]">
-                  v{updater.version} disponível
+                  {t('nav.updater.available', { version: updater.version, defaultValue: `v${updater.version} available` })}
                 </p>
-                <p className="text-[10px] text-sidebar-foreground/40">Clique para baixar</p>
+                <p className="text-[10px] text-sidebar-foreground/40">{t('nav.updater.click_to_download', 'Click to download')}</p>
               </div>
             </button>
           )}
@@ -455,7 +457,7 @@ export function Sidebar(): JSX.Element {
             <div className="space-y-1.5">
               <div className="flex items-center gap-2 text-[11px] text-sidebar-foreground/60">
                 <Loader2 className="h-3 w-3 animate-spin shrink-0 text-[#58a6ff]" />
-                <span>Baixando atualização...</span>
+                <span>{t('nav.updater.downloading', 'Downloading update...')}</span>
                 <span className="ml-auto text-[10px] tabular-nums">{Math.round(updater.percent)}%</span>
               </div>
               <div className="h-1 w-full rounded-full bg-sidebar-border overflow-hidden">
@@ -475,9 +477,9 @@ export function Sidebar(): JSX.Element {
               <RotateCcw className="h-3.5 w-3.5 text-[#3fb950] shrink-0" />
               <div className="min-w-0 flex-1">
                 <p className="text-[11px] font-medium text-[#3fb950]">
-                  v{updater.version} pronta!
+                  {t('nav.updater.ready', { version: updater.version, defaultValue: `v${updater.version} ready!` })}
                 </p>
-                <p className="text-[10px] text-sidebar-foreground/40">Clique para reiniciar e atualizar</p>
+                <p className="text-[10px] text-sidebar-foreground/40">{t('nav.updater.click_to_restart', 'Click to restart and update')}</p>
               </div>
             </button>
           )}
@@ -489,7 +491,7 @@ export function Sidebar(): JSX.Element {
             >
               <XCircle className="h-3.5 w-3.5 text-[#f85149] shrink-0" />
               <div className="min-w-0 flex-1">
-                <p className="text-[11px] font-medium text-[#f85149]">Erro na atualização</p>
+                <p className="text-[11px] font-medium text-[#f85149]">{t('nav.updater.error', 'Update error')}</p>
                 <p className="text-[10px] text-sidebar-foreground/40 truncate">{updater.error}</p>
               </div>
             </button>
@@ -513,7 +515,7 @@ export function Sidebar(): JSX.Element {
               )}
               <div className="min-w-0 flex-1">
                 <div className="truncate text-[12px] font-medium text-sidebar-foreground/80 leading-tight">
-                  {user?.name ?? user?.login ?? 'Conta'}
+                  {user?.name ?? user?.login ?? t('common.account', 'Conta')}
                 </div>
                 {user?.login && (
                   <div className="truncate text-[10px] text-sidebar-foreground/40 leading-tight">
@@ -548,14 +550,14 @@ export function Sidebar(): JSX.Element {
             )}
             <DropdownMenuItem onClick={() => navigate('/settings')}>
               <Settings className="h-3.5 w-3.5 mr-2" />
-              Configurações
+              {t('nav.settings', 'Settings')}
             </DropdownMenuItem>
             <DropdownMenuItem onClick={handleCheckUpdate} disabled={updater.status === 'checking'}>
               {updater.status === 'checking'
                 ? <Loader2 className="h-3.5 w-3.5 mr-2 animate-spin" />
                 : <Download className="h-3.5 w-3.5 mr-2" />
               }
-              Verificar atualizações
+              {t('nav.updater.check_manual', 'Check for updates')}
             </DropdownMenuItem>
             {updater.currentVersion && (
               <div className="px-3 py-1 text-[10px] text-muted-foreground">
@@ -568,7 +570,7 @@ export function Sidebar(): JSX.Element {
               onClick={handleLogout}
             >
               <LogOut className="h-3.5 w-3.5 mr-2" />
-              Sair da conta
+              {t('nav.sign_out', 'Sign out')}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

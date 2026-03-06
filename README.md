@@ -13,18 +13,21 @@
   <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue?style=flat-square" alt="Platforms" />
   <img src="https://img.shields.io/badge/electron-29-47848F?style=flat-square&logo=electron&logoColor=white" alt="Electron" />
   <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="License" />
+  <img src="https://img.shields.io/badge/open%20source-%E2%9C%93-8b5cf6?style=flat-square" alt="Open Source" />
 </p>
 
 ---
 
-OrbitCI is a desktop application that lets you execute GitHub Actions-style workflows entirely on your local machine. No cloud runners, no usage limits, no waiting in queues. Clone your repos, write workflows in YAML, and run them with a single click.
+OrbitCI is a free, open-source desktop application that lets you execute GitHub Actions-style workflows entirely on your local machine. No cloud runners, no usage limits, no waiting in queues. Clone your repos, write workflows in YAML, and run them with a single click.
+
+**Tech Stack**: Electron 29 · React 18 · TypeScript · Drizzle ORM · SQLite · shadcn/ui · Zustand · simple-git · Octokit · Dockerode
 
 ## Why OrbitCI?
 
 | Problem | OrbitCI Solution |
 |---------|-----------------|
 | GitHub Actions minutes are limited and expensive | Run unlimited workflows locally for free |
-| Debugging CI pipelines requires push → wait → check logs cycles | Execute and debug workflows instantly on your machine |
+| Debugging CI pipelines requires push, wait, check logs cycles | Execute and debug workflows instantly on your machine |
 | Secrets are managed in GitHub's UI with no local testing | Manage and test secrets locally before deploying |
 | No visibility into resource usage during CI runs | Real-time CPU, RAM and GPU metrics per step |
 | Docker-based workflows require complex local setup | One-click Docker integration with automatic installation |
@@ -33,7 +36,7 @@ OrbitCI is a desktop application that lets you execute GitHub Actions-style work
 
 ### Workflow Execution
 - **Local runner** that executes `.orbit/workflows/*.yml` files using the same YAML syntax as GitHub Actions
-- **Expression engine** supporting `${{ }}` syntax — `github.*`, `secrets.*`, `steps.*.outputs.*`, `env.*`, `inputs.*`
+- **Expression engine** supporting `${{ }}` syntax: `github.*`, `secrets.*`, `steps.*.outputs.*`, `env.*`, `inputs.*`
 - **Built-in actions** (`OrbitCI:` prefix): git operations, GitHub releases, file manipulation, versioning, Docker containers
 - **Event triggers**: `push`, `release`, `schedule` (cron), `workflow_dispatch`
 - **Release chain**: creating a release automatically triggers dependent `on: release` workflows
@@ -41,12 +44,21 @@ OrbitCI is a desktop application that lets you execute GitHub Actions-style work
 - **Conditional execution** with `if:` expressions, `continue-on-error`, and retry support
 - **Live logs** streamed in real-time to the UI as each step executes
 
+### Dashboard & Analytics
+- **Datadog-inspired dashboard** with stat cards, sparklines, and activity charts
+- **Interactive chart modes**: bar, line, and area views with hover tooltips
+- **Source comparison**: side-by-side OrbitCI vs GitHub Actions performance metrics
+- **Repository overview table** with success rates and inline progress bars
+- **Unified run timeline** combining local and GitHub runs in one feed
+- **Time-scoped filters**: today, 7 days, 30 days with automatic data refresh
+- **Run history** with filtering by repo, status, source, and date range
+
 ### Repository Management
 - **Clone** GitHub repositories directly from the app
 - **Link** existing local folders to tracked repositories
 - **Auto-detect** `.github/workflows/` and import them to `.orbit/workflows/`
-- **Auto-sync** with configurable polling — detects new commits and triggers workflows automatically
-- **GitHub release detection** — polls for new releases and fires `release` events locally
+- **Auto-sync** with configurable polling that detects new commits and triggers workflows automatically
+- **GitHub release detection** that polls for new releases and fires `release` events locally
 
 ### Git Integration
 - Full git panel: **stage, unstage, commit, push, pull, fetch**
@@ -57,8 +69,8 @@ OrbitCI is a desktop application that lets you execute GitHub Actions-style work
 
 ### Docker Support
 - **One-click Docker installation** for Windows (winget), macOS (Homebrew/DMG), and Linux (apt/dnf/pacman)
-- **Container-based job execution** — run steps inside isolated Docker containers
-- **Image management** — pull, list, and select from curated presets (Ubuntu, Node.js, Python, Go, Rust, Electron Builder)
+- **Container-based job execution**: run steps inside isolated Docker containers
+- **Image management**: pull, list, and select from curated presets (Ubuntu, Node.js, Python, Go, Rust, Electron Builder)
 - **Live install terminal** with real-time progress streaming
 
 ### Security
@@ -67,15 +79,18 @@ OrbitCI is a desktop application that lets you execute GitHub Actions-style work
 - **Secret scanning** to detect exposed credentials in workflow files
 - GitHub OAuth authorization code flow with custom protocol (`orbitci://callback`)
 
-### Monitoring & Analytics
+### Monitoring
 - **Real-time metrics**: CPU, RAM, GPU usage per step
-- **Run history** with filtering by repo, status, date range
 - **Performance analytics** with duration trends and resource usage charts
 - **Desktop notifications** on workflow completion (success/failure)
 
 ### Auto-Updater
-- Built-in update system — checks for new releases, downloads and installs automatically
+- Built-in update system that checks for new releases, downloads and installs automatically
 - Sidebar widget showing update progress
+
+### Internationalization
+- Full support for **English** and **Portuguese (Brazil)**
+- Language switching in settings with instant UI update
 
 ## Installation
 
@@ -114,7 +129,7 @@ npm run package
 ## Getting Started
 
 1. **Launch OrbitCI** and log in with your GitHub account (OAuth or Personal Access Token)
-2. **Add a repository** — clone from GitHub or link an existing local folder
+2. **Add a repository**: clone from GitHub or link an existing local folder
 3. **Create a workflow** at `.orbit/workflows/my-workflow.yml`:
 
 ```yaml
@@ -191,36 +206,6 @@ jobs:
 | `docker/build` | Build a Docker image |
 | `docker/push` | Push image to registry |
 
-## Architecture
-
-```
-┌─────────────────────────────────────────────────┐
-│                   Renderer                       │
-│  React 18 + shadcn/ui + Zustand + Tailwind CSS  │
-├─────────────────────────────────────────────────┤
-│                   Preload                        │
-│         contextBridge (IPC channels)             │
-├─────────────────────────────────────────────────┤
-│                 Main Process                     │
-│  ┌───────────┐ ┌──────────┐ ┌───────────────┐  │
-│  │  IPC      │ │  Runner  │ │   Services    │  │
-│  │  Handlers │ │  Engine  │ │  (git, docker │  │
-│  │           │ │          │ │   github,     │  │
-│  │  auth     │ │ workflow │ │   sync,       │  │
-│  │  repos    │ │ job      │ │   secrets,    │  │
-│  │  runs     │ │ step     │ │   notify)     │  │
-│  │  git      │ │ actions  │ │               │  │
-│  │  docker   │ │ expr     │ │               │  │
-│  └───────────┘ └──────────┘ └───────────────┘  │
-│  ┌──────────────────────────────────────────┐   │
-│  │  SQLite (Drizzle ORM + better-sqlite3)   │   │
-│  │  ~/.orbitci/orbit.db                      │   │
-│  └──────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────┘
-```
-
-**Tech Stack**: Electron 29 · React 18 · TypeScript · Drizzle ORM · SQLite · shadcn/ui · Zustand · simple-git · Octokit · Dockerode
-
 ## Development
 
 ```bash
@@ -263,12 +248,13 @@ src/
         ├── pages/        # Route pages
         ├── store/        # Zustand global state
         ├── hooks/        # Custom React hooks
+        ├── i18n/         # Internationalization (en, pt)
         └── lib/          # Utilities & Electron API types
 ```
 
 ## Contributing
 
-Contributions are welcome! Feel free to open issues or submit pull requests.
+OrbitCI is fully open source and contributions are welcome! Feel free to open issues, suggest features, or submit pull requests.
 
 1. Fork the repository
 2. Create your feature branch (`git checkout -b feat/amazing-feature`)
@@ -283,5 +269,5 @@ MIT License. See [LICENSE](LICENSE) for details.
 ---
 
 <p align="center">
-  Built with Electron, React, and a cat in orbit.
+  Built with Electron, React, and a mass of mass.
 </p>

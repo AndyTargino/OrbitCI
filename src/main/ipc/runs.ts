@@ -5,7 +5,12 @@ import { runs, runLogs, runJobs, runSteps, runMetrics } from '../db/schema'
 import { eq, and, desc, gte, asc, type SQL } from 'drizzle-orm'
 import { WorkflowRunner } from '../runner/workflowRunner'
 import { listWorkflowRuns, listRunJobs, getJobLogs } from '../services/githubService'
-import type { RunFilter } from '@shared/types'
+import { readFileSync, existsSync } from 'fs'
+import { join } from 'path'
+import yaml from 'js-yaml'
+import { repos } from '../db/schema'
+import { WORKFLOWS_DIR } from '@shared/constants'
+import type { RunFilter, WorkflowDefinition, JobGraphNode } from '@shared/types'
 
 let runner: WorkflowRunner | null = null
 
@@ -28,6 +33,7 @@ export function registerRunHandlers(): void {
         .where(conditions.length ? and(...conditions) : undefined)
         .orderBy(desc(runs.createdAt))
         .limit(filter?.limit ?? 100)
+        .offset(filter?.offset ?? 0)
 
       return rows.map((r) => ({
         ...r,
@@ -129,6 +135,30 @@ export function registerRunHandlers(): void {
         throw new Error('Execução não encontrada ou já finalizada.')
       }
       throw new Error(`Erro ao cancelar execução: ${msg}`)
+    }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.RUNS_GET_JOB_GRAPH, async (_, runId: string): Promise<JobGraphNode[]> => {
+    try {
+      // Get the run to find its workflow file and repo
+      const [run] = await db.select().from(runs).where(eq(runs.id, runId)).limit(1)
+      if (!run) return []
+
+      const [repo] = await db.select().from(repos).where(eq(repos.id, run.repoId)).limit(1)
+      if (!repo?.localPath) return []
+
+      const wfPath = join(repo.localPath, WORKFLOWS_DIR, run.workflowFile)
+      if (!existsSync(wfPath)) return []
+
+      const wf = yaml.load(readFileSync(wfPath, 'utf-8')) as WorkflowDefinition
+      if (!wf?.jobs) return []
+
+      return Object.entries(wf.jobs).map(([name, job]) => ({
+        name,
+        needs: Array.isArray(job.needs) ? job.needs : job.needs ? [job.needs] : []
+      }))
+    } catch {
+      return []
     }
   })
 

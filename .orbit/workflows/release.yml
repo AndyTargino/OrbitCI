@@ -4,13 +4,57 @@ on:
   push:
     branches: [main]
 
+permissions:
+  contents: write
+
 jobs:
   release:
+    runs-on: ubuntu-latest
+
+    outputs:
+      skip: ${{ steps.check_commit.outputs.skip == 'true' || steps.bump.outputs.skip == 'true' }}
+      tag: ${{ steps.bump.outputs.tag }}
+
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Skip if release commit
+        id: check_commit
+        run: |
+          LAST_MSG=$(git log -1 --pretty=format:"%s")
+          if echo "$LAST_MSG" | grep -qE '^release: v'; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Setup Node.js
+        if: steps.check_commit.outputs.skip != 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        if: steps.check_commit.outputs.skip != 'true'
+        run: npm ci
+
+      - name: Run tests
+        if: steps.check_commit.outputs.skip != 'true'
+        run: npm test
+
+      - name: Build
+        if: steps.check_commit.outputs.skip != 'true'
+        run: npm run build
+
       - name: Determine version bump
+        if: steps.check_commit.outputs.skip != 'true'
         id: bump
         run: |
-          # Get the latest tag (semver only)
           LATEST_TAG=$(git tag -l 'v*' --sort=-v:refname | head -n1)
 
           if [ -z "$LATEST_TAG" ]; then
@@ -21,10 +65,8 @@ jobs:
             echo "Latest tag: $LATEST_TAG (version: $CURRENT_VERSION)"
           fi
 
-          # Parse current version
           IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT_VERSION"
 
-          # Get commits since last tag (or all commits if no tag)
           if [ -z "$LATEST_TAG" ]; then
             COMMITS=$(git log --pretty=format:"%s" --no-merges)
           else
@@ -41,41 +83,26 @@ jobs:
           echo "$COMMITS"
           echo "────────────────────────────────"
 
-          # Analyze commits for version bump level
           BUMP="patch"
-
           while IFS= read -r msg; do
             if echo "$msg" | grep -qiE '^[a-z]+(\(.+\))?!:|BREAKING[ _-]CHANGE'; then
               BUMP="major"
               break
             fi
             if echo "$msg" | grep -qiE '^feat(\(.+\))?:'; then
-              if [ "$BUMP" != "major" ]; then
-                BUMP="minor"
-              fi
+              if [ "$BUMP" != "major" ]; then BUMP="minor"; fi
             fi
           done <<< "$COMMITS"
 
-          # Apply bump
           case "$BUMP" in
-            major)
-              MAJOR=$((MAJOR + 1))
-              MINOR=0
-              PATCH=0
-              ;;
-            minor)
-              MINOR=$((MINOR + 1))
-              PATCH=0
-              ;;
-            patch)
-              PATCH=$((PATCH + 1))
-              ;;
+            major) MAJOR=$((MAJOR + 1)); MINOR=0; PATCH=0 ;;
+            minor) MINOR=$((MINOR + 1)); PATCH=0 ;;
+            patch) PATCH=$((PATCH + 1)) ;;
           esac
 
           NEW_VERSION="${MAJOR}.${MINOR}.${PATCH}"
           NEW_TAG="v${NEW_VERSION}"
 
-          # Check if tag already exists
           if git rev-parse "$NEW_TAG" >/dev/null 2>&1; then
             echo "Tag $NEW_TAG already exists. Skipping release."
             echo "skip=true" >> "$GITHUB_OUTPUT"
@@ -90,7 +117,7 @@ jobs:
           echo "prev_tag=$LATEST_TAG" >> "$GITHUB_OUTPUT"
 
       - name: Generate release notes
-        if: steps.bump.outputs.skip != 'true'
+        if: steps.check_commit.outputs.skip != 'true' && steps.bump.outputs.skip != 'true'
         id: notes
         run: |
           PREV_TAG="${{ steps.bump.outputs.prev_tag }}"
@@ -172,43 +199,54 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Update package.json version
-        if: steps.bump.outputs.skip != 'true'
+        if: steps.check_commit.outputs.skip != 'true' && steps.bump.outputs.skip != 'true'
         run: npm version "${{ steps.bump.outputs.version }}" --no-git-tag-version --allow-same-version
 
       - name: Commit version bump
-        if: steps.bump.outputs.skip != 'true'
+        if: steps.check_commit.outputs.skip != 'true' && steps.bump.outputs.skip != 'true'
         run: |
-          git config user.name "OrbitCI[bot]"
-          git config user.email "orbitci[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
           git add package.json package-lock.json
           git commit -m "release: v${{ steps.bump.outputs.version }}"
           git push
 
       - name: Create tag
-        if: steps.bump.outputs.skip != 'true'
+        if: steps.check_commit.outputs.skip != 'true' && steps.bump.outputs.skip != 'true'
         run: |
           git tag "${{ steps.bump.outputs.tag }}"
           git push origin "${{ steps.bump.outputs.tag }}"
 
       - name: Create GitHub Release
-        if: steps.bump.outputs.skip != 'true'
-        OrbitCI: github/create-release
+        if: steps.check_commit.outputs.skip != 'true' && steps.bump.outputs.skip != 'true'
+        uses: softprops/action-gh-release@v2
         with:
-          tag-name: ${{ steps.bump.outputs.tag }}
+          tag_name: ${{ steps.bump.outputs.tag }}
           name: OrbitCI ${{ steps.bump.outputs.tag }}
           body: ${{ steps.notes.outputs.BODY }}
-          repo: ${{ github.repository }}
+          draft: true
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ─── Build jobs (run in parallel after release) ─────────────────────────────
 
   build-windows:
     needs: release
+    if: needs.release.outputs.skip != 'true'
     runs-on: windows-latest
+
     steps:
       - name: Checkout release tag
-        run: |
-          git fetch --tags
-          LATEST_TAG=$(git tag -l 'v*' --sort=-v:refname | head -n1)
-          echo "Building from tag: $LATEST_TAG"
-          git checkout "$LATEST_TAG"
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.release.outputs.tag }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
 
       - name: Install Dependencies
         run: npm ci
@@ -222,14 +260,20 @@ jobs:
 
   build-linux:
     needs: release
+    if: needs.release.outputs.skip != 'true'
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout release tag
-        run: |
-          git fetch --tags
-          LATEST_TAG=$(git tag -l 'v*' --sort=-v:refname | head -n1)
-          echo "Building from tag: $LATEST_TAG"
-          git checkout "$LATEST_TAG"
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.release.outputs.tag }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
 
       - name: Install system dependencies
         run: |
@@ -248,20 +292,26 @@ jobs:
 
   build-macos:
     needs: release
+    if: needs.release.outputs.skip != 'true'
     runs-on: macos-latest
+
     steps:
       - name: Checkout release tag
-        run: |
-          git fetch --tags
-          LATEST_TAG=$(git tag -l 'v*' --sort=-v:refname | head -n1)
-          echo "Building from tag: $LATEST_TAG"
-          git checkout "$LATEST_TAG"
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.release.outputs.tag }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
 
       - name: Install Dependencies
         run: npm ci
 
       - name: Install Python setuptools
-        run: python3 -m pip install setuptools
+        run: python3 -m pip install setuptools --break-system-packages
 
       - name: Build and Publish
         env:
@@ -269,3 +319,16 @@ jobs:
         run: |
           npm run build
           npx electron-builder --macos --publish always
+
+  publish-release:
+    needs: [release, build-windows, build-linux, build-macos]
+    if: needs.release.outputs.skip != 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.release.outputs.tag }}
+          draft: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

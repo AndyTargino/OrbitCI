@@ -32,6 +32,8 @@ export const IPC_CHANNELS = {
   REPOS_IMPORT_GITHUB_WORKFLOWS: 'repos:importGithubWorkflows',
   REPOS_LIST_GITHUB_WORKFLOWS: 'repos:listGithubWorkflows',
   REPOS_FIND_LOCAL: 'repos:findLocal',
+  REPOS_GET_GITHUB_WORKFLOW_CONTENT: 'repos:getGithubWorkflowContent',
+  REPOS_IMPORT_GITHUB_WORKFLOWS_SELECTIVE: 'repos:importGithubWorkflowsSelective',
 
   // Workflows
   WORKFLOWS_LIST: 'workflows:list',
@@ -55,6 +57,7 @@ export const IPC_CHANNELS = {
   RUNS_GET_STEPS: 'runs:getSteps',
   RUNS_CANCEL: 'runs:cancel',
   RUNS_GET_METRICS: 'runs:getMetrics',
+  RUNS_GET_JOB_GRAPH: 'runs:getJobGraph',
 
   // Git
   GIT_STATUS: 'git:status',
@@ -87,6 +90,7 @@ export const IPC_CHANNELS = {
   GIT_REMOTES: 'git:remotes',
   GIT_UNSTAGE_ALL: 'git:unstageAll',
   GIT_DIFF_STAGED: 'git:diffStaged',
+  GIT_SHOW_COMMIT: 'git:showCommit',
 
   // Docker
   DOCKER_STATUS: 'docker:status',
@@ -123,5 +127,6 @@ export const IPC_CHANNELS = {
   EVENT_DOCKER_LOG: 'event:dockerLog',
   EVENT_DOCKER_INSTALL: 'event:dockerInstall',
   EVENT_OAUTH_CALLBACK: 'event:oauth:callback',
-  EVENT_UPDATER: 'event:updater'
+  EVENT_UPDATER: 'event:updater',
+  EVENT_GIT_CHANGED: 'event:gitChanged'
 } as const

@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { GitBranch, Check, ChevronDown, Search } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { GitBranch as GitBranchType } from '@shared/types'
+import { useTranslation } from 'react-i18next'
 
 interface BranchSelectorProps {
   branches: GitBranchType[]
@@ -11,6 +12,7 @@ interface BranchSelectorProps {
 }
 
 export function BranchSelector({ branches, current, onSelect, className }: BranchSelectorProps): JSX.Element {
+  const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState('')
   const ref = useRef<HTMLDivElement>(null)
@@ -55,13 +57,13 @@ export function BranchSelector({ branches, current, onSelect, className }: Branc
               ref={inputRef}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Find a branch..."
+              placeholder={t('workspace.branch_selector.filter_placeholder', 'Find a branch...')}
               className="flex-1 bg-transparent text-[13px] outline-none placeholder:text-muted-foreground/50"
             />
           </div>
           <div className="max-h-[240px] overflow-auto py-1">
             {filtered.length === 0 && (
-              <p className="text-[12px] text-muted-foreground px-3 py-2">No branches found</p>
+              <p className="text-[12px] text-muted-foreground px-3 py-2">{t('workspace.branch_selector.no_branches', 'No branches found')}</p>
             )}
             {filtered.map((b) => (
               <button
