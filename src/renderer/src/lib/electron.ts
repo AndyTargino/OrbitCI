@@ -60,7 +60,7 @@ export interface ElectronAPI {
     list: (repoId: string) => Promise<WorkflowFile[]>
     get: (repoId: string, file: string) => Promise<string>
     save: (repoId: string, file: string, content: string) => Promise<void>
-    run: (repoId: string, file: string, inputs?: Record<string, string>) => Promise<string>
+    run: (repoId: string, file: string, inputs?: Record<string, string>) => Promise<{ runId: string }>
     create: (repoId: string, file: string, content: string) => Promise<void>
     scanSecrets: (repoId: string) => Promise<{ name: string; usedIn: string[] }[]>
   }
@@ -76,6 +76,14 @@ export interface ElectronAPI {
     listGitHub: (repoId: string, perPage?: number, page?: number, status?: string) => Promise<GitHubRun[]>
     listGitHubRunJobs: (repoId: string, runId: number) => Promise<GitHubJob[]>
     getGitHubJobLogs: (repoId: string, jobId: number) => Promise<string>
+    getRepoStats: (repoId: string) => Promise<{
+      stargazersCount: number; forksCount: number; openIssuesCount: number
+      watchersCount: number; size: number; language: string | null
+    }>
+    getPrCounts: (repoId: string) => Promise<{ open: number; closed: number; merged: number }>
+    getCommitActivity: (repoId: string) => Promise<{ week: number; total: number; days: number[] }[]>
+    getContributors: (repoId: string, limit?: number) => Promise<{ login: string; avatarUrl: string; contributions: number }[]>
+    getLanguages: (repoId: string) => Promise<Record<string, number>>
   }
   git: {
     status: (repoId: string) => Promise<GitStatus>

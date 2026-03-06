@@ -345,12 +345,15 @@
       "gpu_label": "GPU",
       "vram_label": "VRAM",
       "last_run": "Last run",
-      "no_runs_yet": "No runs yet"
+      "no_runs_yet": "No runs yet",
+      "search_placeholder": "Search runs...",
+      "filter_no_results": "Adjust filters or run a workflow"
     },
     "history": {
       "recent_commits": "Recent commits",
       "view_history": "View history",
       "commit_history_label": "Commit history",
+      "search_placeholder": "Search commits...",
       "commits_loaded_count": "{{count}} commits loaded",
       "total_commits_count": "{{count}} commits in total",
       "loading_history": "Loading history...",
@@ -702,6 +705,19 @@
       "show_more": "Show all {{count}} runs",
       "load_more": "Load more",
       "open_github": "Open on GitHub"
+    },
+    "github": {
+      "stars": "Stars",
+      "forks": "Forks",
+      "open_issues": "Open Issues",
+      "watchers": "Watchers",
+      "prs_open": "PRs Open",
+      "prs_merged": "PRs Merged",
+      "commit_activity": "Commit Activity",
+      "last_12_weeks": "last 12 weeks",
+      "languages": "Languages",
+      "pull_requests": "Pull Requests",
+      "contributors": "Top Contributors"
     },
     "analytics": {
       "title": "Analytics",

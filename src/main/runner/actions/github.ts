@@ -29,7 +29,7 @@ export const githubActions: Record<string, ActionHandler> = {
       prerelease: isPrerelease
     })
 
-    log(`✓ Release publicada: ${release.htmlUrl}`)
+    log(`[OK] Release publicada: ${release.htmlUrl}`)
     setOutput('release-id', String(release.id))
     setOutput('html-url', release.htmlUrl)
 
@@ -55,7 +55,7 @@ export const githubActions: Record<string, ActionHandler> = {
             id: release.id
           }
         })
-        log(`✓ Evento release disparado para workflows dependentes`)
+        log(`[OK] Evento release disparado para workflows dependentes`)
       }
     } else {
       log(`[debug] Skipping release trigger: isDraft=${isDraft}, repoId=${repoId ?? 'missing'}`)
@@ -76,7 +76,7 @@ export const githubActions: Record<string, ActionHandler> = {
     const releaseId = parseInt(w['release-id'] ?? '0')
 
     await githubService.uploadReleaseAsset(owner, repo, releaseId, filePath, fileName)
-    log(`✓ Asset enviado: ${fileName}`)
+    log(`[OK] Asset enviado: ${fileName}`)
   },
 
   'github/create-issue': async ({ with: w, workspace, log, setOutput }) => {
@@ -84,7 +84,7 @@ export const githubActions: Record<string, ActionHandler> = {
     const [owner, repo] = (w['repo'] ?? process.env['GITHUB_REPOSITORY'] ?? '/').split('/')
     const labels = w?.labels?.split(',').map((l) => l.trim())
     const number = await githubService.createIssue(owner, repo, w.title, w?.body, labels)
-    log(`✓ Issue criada: #${number}`)
+    log(`[OK] Issue criada: #${number}`)
     setOutput('issue-number', String(number))
   },
 
@@ -92,7 +92,7 @@ export const githubActions: Record<string, ActionHandler> = {
     if (!w?.['issue-number']) throw new Error('github/close-issue: "issue-number" é obrigatório')
     const [owner, repo] = (w['repo'] ?? process.env['GITHUB_REPOSITORY'] ?? '/').split('/')
     await githubService.closeIssue(owner, repo, parseInt(w['issue-number']))
-    log(`✓ Issue #${w['issue-number']} fechada`)
+    log(`[OK] Issue #${w['issue-number']} fechada`)
   },
 
   'github/comment': async ({ with: w, workspace, log }) => {
@@ -100,7 +100,7 @@ export const githubActions: Record<string, ActionHandler> = {
     if (!w?.body) throw new Error('github/comment: "body" é obrigatório')
     const [owner, repo] = (w['repo'] ?? process.env['GITHUB_REPOSITORY'] ?? '/').split('/')
     await githubService.addComment(owner, repo, parseInt(w.number), w.body)
-    log(`✓ Comentário adicionado em #${w.number}`)
+    log(`[OK] Comentario adicionado em #${w.number}`)
   },
 
   'github/set-status': async ({ with: w, workspace, log }) => {
@@ -114,6 +114,6 @@ export const githubActions: Record<string, ActionHandler> = {
       w?.description,
       w?.context
     )
-    log(`✓ Status definido: ${w.state}`)
+    log(`[OK] Status definido: ${w.state}`)
   }
 }

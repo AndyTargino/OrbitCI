@@ -76,7 +76,17 @@ const api = {
     listGitHubRunJobs: (repoId: string, runId: number) =>
       ipcRenderer.invoke(IPC_CHANNELS.GITHUB_RUN_JOBS, repoId, runId),
     getGitHubJobLogs: (repoId: string, jobId: number) =>
-      ipcRenderer.invoke(IPC_CHANNELS.GITHUB_JOB_LOGS, repoId, jobId)
+      ipcRenderer.invoke(IPC_CHANNELS.GITHUB_JOB_LOGS, repoId, jobId),
+    getRepoStats: (repoId: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.GITHUB_REPO_STATS, repoId),
+    getPrCounts: (repoId: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.GITHUB_PR_COUNTS, repoId),
+    getCommitActivity: (repoId: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.GITHUB_COMMIT_ACTIVITY, repoId),
+    getContributors: (repoId: string, limit?: number) =>
+      ipcRenderer.invoke(IPC_CHANNELS.GITHUB_CONTRIBUTORS, repoId, limit),
+    getLanguages: (repoId: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.GITHUB_LANGUAGES, repoId)
   },
 
   // ─── Git ───────────────────────────────────────────────────────────────────

@@ -2,10 +2,10 @@ import { useEffect, useState, useMemo, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import {
-  Github, Loader2, RefreshCw, ExternalLink,
+  Loader2, RefreshCw, ExternalLink,
   CheckCircle2, XCircle, AlertCircle, Circle,
   GitBranch, GitCommit, Clock, ChevronDown, ChevronRight,
-  CircleDot, Inbox
+  CircleDot, Inbox, Search, Filter, Timer
 } from 'lucide-react'
 import { electron } from '@/lib/electron'
 import { useRunsStore } from '@/store'
@@ -36,25 +36,58 @@ type UnifiedRun =
   | { source: 'orbit'; run: Run; createdAt: string }
   | { source: 'github'; run: GitHubRun; createdAt: string }
 
+// Group runs by date
+function groupRunsByDate(items: UnifiedRun[]): { label: string; dateKey: string; runs: UnifiedRun[] }[] {
+  const groups: Map<string, UnifiedRun[]> = new Map()
+  const today = new Date().toDateString()
+  const yesterday = new Date(Date.now() - 86400000).toDateString()
+
+  for (const item of items) {
+    const d = new Date(item.createdAt)
+    const ds = d.toDateString()
+    let key: string
+    if (ds === today) key = 'today'
+    else if (ds === yesterday) key = 'yesterday'
+    else key = d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
+    const arr = groups.get(key) ?? []
+    arr.push(item)
+    groups.set(key, arr)
+  }
+
+  return Array.from(groups.entries()).map(([label, runs]) => ({
+    label,
+    dateKey: label,
+    runs
+  }))
+}
+
 // ─── Filter pill ─────────────────────────────────────────────────────────────
-function FilterPill({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }): JSX.Element {
+function FilterPill({ label, active, onClick, count }: { label: string; active: boolean; onClick: () => void; count?: number }): JSX.Element {
   return (
     <button
       onClick={onClick}
       className={cn(
-        'px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors',
+        'px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors flex items-center gap-1.5',
         active
           ? 'bg-primary/15 text-primary border border-primary/30'
           : 'bg-muted/50 text-muted-foreground border border-transparent hover:bg-muted hover:text-foreground'
       )}
     >
       {label}
+      {count !== undefined && count > 0 && (
+        <span className={cn(
+          'text-[9px] tabular-nums rounded-full px-1.5 py-0.5 min-w-[18px] text-center',
+          active ? 'bg-primary/20 text-primary' : 'bg-muted text-muted-foreground/70'
+        )}>
+          {count}
+        </span>
+      )}
     </button>
   )
 }
 
 // ─── GitHub run visual helpers ───────────────────────────────────────────────
-function ghRunVisual(run: GitHubRun, t: any): { icon: JSX.Element; badge: string; badgeCls: string } {
+function ghRunVisual(run: GitHubRun, t: ReturnType<typeof useTranslation>['t']): { icon: JSX.Element; badge: string; badgeCls: string } {
   if (run.status === 'in_progress') {
     return {
       icon: <Loader2 className="h-4 w-4 text-[#58a6ff] animate-spin shrink-0" />,
@@ -94,6 +127,7 @@ export function RepoActions(): JSX.Element {
 
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>('all')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
+  const [searchTerm, setSearchTerm] = useState('')
 
   const [ghRuns, setGhRuns] = useState<GitHubRun[]>([])
   const [isLoading, setIsLoading] = useState(false)
@@ -101,13 +135,6 @@ export function RepoActions(): JSX.Element {
   const [ghHasMore, setGhHasMore] = useState(true)
 
   const [detailRun, setDetailRun] = useState<{ source: 'orbit' | 'github'; run: Run | GitHubRun } | null>(null)
-
-  const SOURCE_LABELS: Record<SourceFilter, string> = {
-    all: t('workspace.status.all', 'All'), orbit: t('workspace.sections.orbit_ci', 'OrbitCI'), github: t('common.github_actions', 'GitHub Actions')
-  }
-  const STATUS_LABELS: Record<StatusFilter, string> = {
-    all: t('workspace.status.all', 'All'), success: t('workspace.status.success', 'Success'), failure: t('workspace.status.failure', 'Failure'), running: t('workspace.status.running', 'Running'), cancelled: t('workspace.status.cancelled', 'Cancelled')
-  }
 
   // ── Load data ────────────────────────────────────────────────────────────
   const loadOrbitRuns = useCallback(async () => {
@@ -148,10 +175,12 @@ export function RepoActions(): JSX.Element {
 
   const unifiedRuns = useMemo(() => {
     const items: UnifiedRun[] = []
+    const q = searchTerm.toLowerCase()
 
     if (sourceFilter !== 'github') {
       for (const run of repoOrbitRuns) {
         if (statusFilter !== 'all' && run.status !== statusFilter) continue
+        if (q && !(run.workflowName ?? run.workflowFile).toLowerCase().includes(q) && !(run.gitBranch ?? '').toLowerCase().includes(q)) continue
         items.push({ source: 'orbit', run, createdAt: run.createdAt })
       }
     }
@@ -160,49 +189,99 @@ export function RepoActions(): JSX.Element {
       for (const run of ghRuns) {
         const mapped = ghStatusToLocal(run.status, run.conclusion)
         if (statusFilter !== 'all' && mapped !== statusFilter) continue
+        if (q && !run.displayTitle.toLowerCase().includes(q) && !(run.headBranch ?? '').toLowerCase().includes(q)) continue
         items.push({ source: 'github', run, createdAt: run.createdAt })
       }
     }
 
     items.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
     return items
-  }, [repoOrbitRuns, ghRuns, sourceFilter, statusFilter])
+  }, [repoOrbitRuns, ghRuns, sourceFilter, statusFilter, searchTerm])
 
+  const grouped = useMemo(() => groupRunsByDate(unifiedRuns), [unifiedRuns])
+
+  // Counts for filter pills
   const orbitCount = repoOrbitRuns.length
   const ghCount = ghRuns.length
+
+  const statusCounts = useMemo(() => {
+    const all = [
+      ...repoOrbitRuns.map((r) => r.status),
+      ...ghRuns.map((r) => ghStatusToLocal(r.status, r.conclusion))
+    ]
+    return {
+      success: all.filter((s) => s === 'success').length,
+      failure: all.filter((s) => s === 'failure').length,
+      running: all.filter((s) => s === 'running').length,
+      cancelled: all.filter((s) => s === 'cancelled').length
+    }
+  }, [repoOrbitRuns, ghRuns])
+
+  const dateLabel = (key: string) => {
+    if (key === 'today') return t('common.time.today', 'Today')
+    if (key === 'yesterday') return 'Yesterday'
+    return key
+  }
 
   return (
     <div className="h-full flex flex-col overflow-hidden">
       {/* ── Filter bar ──────────────────────────────────────────────────── */}
-      <div className="px-6 py-2.5 border-b border-border bg-card/20 flex items-center justify-between gap-3 flex-wrap shrink-0">
-        <div className="flex items-center gap-2 flex-wrap">
-          {/* Source toggle */}
-          {(Object.keys(SOURCE_LABELS) as SourceFilter[]).map((src) => (
-            <FilterPill key={src} label={SOURCE_LABELS[src]} active={sourceFilter === src} onClick={() => setSourceFilter(src)} />
-          ))}
-
-          <div className="w-px h-5 bg-border mx-1" />
-
-          {/* Status filter */}
-          {(Object.keys(STATUS_LABELS) as StatusFilter[]).map((status) => (
-            <FilterPill key={status} label={STATUS_LABELS[status]} active={statusFilter === status} onClick={() => setStatusFilter(status)} />
-          ))}
-        </div>
-
-        <div className="flex items-center gap-3 shrink-0">
-          <span className="text-[11px] text-muted-foreground">
-            {orbitCount} orbit · {ghCount} github
+      <div className="px-5 py-2.5 border-b border-border bg-card/20 space-y-2.5 shrink-0">
+        {/* Top row: search + refresh */}
+        <div className="flex items-center gap-3">
+          <div className="relative flex-1 max-w-[280px]">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground/60" />
+            <input
+              type="text"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder={t('workspace.runs.search_placeholder', 'Search runs...')}
+              className="w-full h-7 pl-8 pr-3 rounded-md border border-border bg-muted/30 text-[12px] text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-ring/40 focus:border-ring/40"
+            />
+          </div>
+          <div className="flex-1" />
+          <span className="text-[11px] text-muted-foreground tabular-nums shrink-0">
+            {orbitCount > 0 && <span className="text-[#8b5cf6] font-medium">{orbitCount}</span>}
+            {orbitCount > 0 && ghCount > 0 && <span className="mx-1 text-border">/</span>}
+            {ghCount > 0 && <span className="font-medium">{ghCount}</span>}
+            <span className="ml-1">{t('dashboard.chart.runs', 'runs')}</span>
           </span>
           <Button
             size="sm"
             variant="outline"
-            className="h-7 text-[12px] px-2.5 gap-1.5"
+            className="h-7 text-[12px] px-2.5 gap-1.5 shrink-0"
             onClick={handleRefresh}
             disabled={isLoading}
           >
             <RefreshCw className={cn('h-3.5 w-3.5', isLoading && 'animate-spin')} />
             {t('common.refresh', 'Refresh')}
           </Button>
+        </div>
+
+        {/* Bottom row: filters */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <FilterPill label={t('workspace.status.all', 'All')} active={sourceFilter === 'all'} onClick={() => setSourceFilter('all')} />
+          <FilterPill label="OrbitCI" active={sourceFilter === 'orbit'} onClick={() => setSourceFilter('orbit')} count={orbitCount} />
+          <FilterPill label="GitHub Actions" active={sourceFilter === 'github'} onClick={() => setSourceFilter('github')} count={ghCount} />
+
+          <div className="w-px h-5 bg-border mx-0.5" />
+
+          <FilterPill label={t('workspace.status.success', 'Success')} active={statusFilter === 'success'} onClick={() => setStatusFilter(statusFilter === 'success' ? 'all' : 'success')} count={statusCounts.success} />
+          <FilterPill label={t('workspace.status.failure', 'Failure')} active={statusFilter === 'failure'} onClick={() => setStatusFilter(statusFilter === 'failure' ? 'all' : 'failure')} count={statusCounts.failure} />
+          <FilterPill label={t('workspace.status.running', 'Running')} active={statusFilter === 'running'} onClick={() => setStatusFilter(statusFilter === 'running' ? 'all' : 'running')} count={statusCounts.running} />
+          <FilterPill label={t('workspace.status.cancelled', 'Cancelled')} active={statusFilter === 'cancelled'} onClick={() => setStatusFilter(statusFilter === 'cancelled' ? 'all' : 'cancelled')} count={statusCounts.cancelled} />
+
+          {(statusFilter !== 'all' || sourceFilter !== 'all' || searchTerm) && (
+            <>
+              <div className="w-px h-5 bg-border mx-0.5" />
+              <button
+                onClick={() => { setStatusFilter('all'); setSourceFilter('all'); setSearchTerm('') }}
+                className="px-2 py-1 rounded-md text-[11px] font-medium text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+              >
+                {t('common.clear', 'Clear')}
+              </button>
+            </>
+          )}
         </div>
       </div>
 
@@ -217,28 +296,41 @@ export function RepoActions(): JSX.Element {
           <EmptyState
             icon={Inbox}
             title={t('workspace.runs.no_runs_found', 'No runs found')}
-            description={t('workspace.runs.filter_no_results', 'Adjust filters or run a workflow')}
+            description={searchTerm
+              ? `No runs matching "${searchTerm}"`
+              : t('workspace.runs.filter_no_results', 'Adjust filters or run a workflow')}
             action={{ label: t('common.refresh', 'Refresh'), onClick: handleRefresh }}
           />
         ) : (
           <>
-            <div className="divide-y divide-border">
-              {unifiedRuns.map((item) =>
-                item.source === 'orbit' ? (
-                  <OrbitRunRow
-                    key={`orbit-${item.run.id}`}
-                    run={item.run as Run}
-                    onClick={() => setDetailRun({ source: 'orbit', run: item.run })}
-                  />
-                ) : (
-                  <GhRunRow
-                    key={`gh-${(item.run as GitHubRun).id}`}
-                    run={item.run as GitHubRun}
-                    onClick={() => setDetailRun({ source: 'github', run: item.run })}
-                  />
-                )
-              )}
-            </div>
+            {grouped.map((group) => (
+              <div key={group.dateKey}>
+                {/* Date header */}
+                <div className="sticky top-0 z-10 px-5 py-1.5 bg-background/95 backdrop-blur-sm border-b border-border/50">
+                  <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
+                    {dateLabel(group.dateKey)}
+                  </span>
+                </div>
+
+                <div className="divide-y divide-border/50">
+                  {group.runs.map((item) =>
+                    item.source === 'orbit' ? (
+                      <OrbitRunRow
+                        key={`orbit-${item.run.id}`}
+                        run={item.run as Run}
+                        onClick={() => setDetailRun({ source: 'orbit', run: item.run })}
+                      />
+                    ) : (
+                      <GhRunRow
+                        key={`gh-${(item.run as GitHubRun).id}`}
+                        run={item.run as GitHubRun}
+                        onClick={() => setDetailRun({ source: 'github', run: item.run })}
+                      />
+                    )
+                  )}
+                </div>
+              </div>
+            ))}
 
             {/* Load more (GitHub) */}
             {sourceFilter !== 'orbit' && ghHasMore && (
@@ -253,7 +345,7 @@ export function RepoActions(): JSX.Element {
                     onClick={() => loadGhRuns(false)}
                   >
                     <ChevronDown className="h-3.5 w-3.5" />
-                    {t('workspace.runs.load_more_gh', 'Load more from GitHub')}
+                    {t('common.load_more', 'Load more')}
                   </Button>
                 )}
               </div>
@@ -282,28 +374,36 @@ export function RepoActions(): JSX.Element {
 // ─── OrbitCI Run row ──────────────────────────────────────────────────────────
 function OrbitRunRow({ run, onClick }: { run: Run; onClick: () => void }): JSX.Element {
   return (
-    <div className="gh-row cursor-pointer group" onClick={onClick}>
+    <div
+      className="flex items-center gap-3 px-5 py-3 cursor-pointer group hover:bg-accent/30 transition-colors"
+      onClick={onClick}
+    >
       <StatusIcon status={run.status} />
       <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="font-medium text-[13px] text-foreground truncate">
+        <div className="flex items-start gap-2">
+          <p className="font-medium text-[13px] text-foreground min-w-0 flex-1 leading-snug line-clamp-2 break-words">
             {run.workflowName ?? run.workflowFile}
-          </span>
-          <StatusBadge status={run.status} />
-          <span className="text-[10px] px-1.5 py-0.5 rounded bg-[#8b5cf6]/10 text-[#8b5cf6] font-medium shrink-0">Orbit</span>
+          </p>
+          <div className="flex items-center gap-1.5 shrink-0 mt-0.5">
+            <StatusBadge status={run.status} />
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-[#8b5cf6]/10 text-[#8b5cf6] font-medium">Orbit</span>
+          </div>
         </div>
-        <div className="flex items-center gap-3 mt-0.5 text-[11px] text-muted-foreground flex-wrap">
-          <span>{formatRelativeTime(run.createdAt)}</span>
+        <div className="flex items-center gap-3 mt-1 text-[11px] text-muted-foreground flex-wrap">
+          <span className="flex items-center gap-1">
+            <Clock className="h-3 w-3" />
+            {formatRelativeTime(run.createdAt)}
+          </span>
           {run.durationMs != null && (
             <span className="flex items-center gap-1">
-              <Clock className="h-3 w-3" />
+              <Timer className="h-3 w-3" />
               {formatDuration(run.durationMs)}
             </span>
           )}
           {run.gitBranch && (
             <span className="flex items-center gap-1">
               <GitBranch className="h-3 w-3" />
-              {run.gitBranch}
+              <span className="max-w-[140px] truncate">{run.gitBranch}</span>
             </span>
           )}
           {run.gitSha && (
@@ -314,7 +414,7 @@ function OrbitRunRow({ run, onClick }: { run: Run; onClick: () => void }): JSX.E
           )}
         </div>
       </div>
-      <ChevronRight className="h-4 w-4 text-muted-foreground/40 shrink-0 group-hover:text-muted-foreground transition-colors" />
+      <ChevronRight className="h-4 w-4 text-muted-foreground/30 shrink-0 group-hover:text-muted-foreground transition-colors" />
     </div>
   )
 }
@@ -326,38 +426,49 @@ function GhRunRow({ run, onClick }: { run: GitHubRun; onClick: () => void }): JS
   const workflowFile = run.workflowPath.split('/').pop() ?? run.workflowPath
 
   return (
-    <div className="gh-row cursor-pointer group" onClick={onClick}>
+    <div
+      className="flex items-center gap-3 px-5 py-3 cursor-pointer group hover:bg-accent/30 transition-colors"
+      onClick={onClick}
+    >
       {icon}
       <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="font-medium text-[13px] text-foreground truncate">
+        <div className="flex items-start gap-2">
+          <p className="font-medium text-[13px] text-foreground min-w-0 flex-1 leading-snug line-clamp-2 break-words">
             {run.displayTitle}
-          </span>
-          <Badge variant="outline" className={cn('text-[11px] font-medium shrink-0', badgeCls)}>
-            {badge}
-          </Badge>
-          <span className="text-[10px] px-1.5 py-0.5 rounded bg-foreground/5 text-muted-foreground font-medium shrink-0">GitHub</span>
-          <span className="text-[11px] text-muted-foreground shrink-0">#{run.runNumber}</span>
+          </p>
+          <div className="flex items-center gap-1.5 shrink-0 mt-0.5">
+            <Badge variant="outline" className={cn('text-[10px] font-medium py-0 h-[18px]', badgeCls)}>
+              {badge}
+            </Badge>
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-foreground/5 text-muted-foreground font-medium">GitHub</span>
+            <span className="text-[11px] text-muted-foreground/60">#{run.runNumber}</span>
+          </div>
         </div>
-        <div className="flex items-center gap-3 mt-0.5 text-[11px] text-muted-foreground flex-wrap">
-          <span className="font-mono text-muted-foreground/70">{workflowFile}</span>
+        <div className="flex items-center gap-3 mt-1 text-[11px] text-muted-foreground flex-wrap">
+          <span className="flex items-center gap-1">
+            <Clock className="h-3 w-3" />
+            {formatRelativeTime(run.createdAt)}
+          </span>
+          <span className="font-mono text-muted-foreground/50 text-[10px]">{workflowFile}</span>
           {run.headBranch && (
             <span className="flex items-center gap-1">
               <GitBranch className="h-3 w-3" />
-              {run.headBranch}
+              <span className="max-w-[140px] truncate">{run.headBranch}</span>
             </span>
           )}
           <span className="flex items-center gap-1 font-mono text-[10px]">
             <GitCommit className="h-3 w-3" />
             {run.headSha.slice(0, 7)}
           </span>
-          <span className="flex items-center gap-1">
-            <Clock className="h-3 w-3" />
-            {formatRelativeTime(run.createdAt)}
-          </span>
-          <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4">
+          <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 text-muted-foreground/60">
             {run.event}
           </Badge>
+          {run.actor && (
+            <span className="flex items-center gap-1">
+              <img src={run.actor.avatarUrl} alt={run.actor.login} className="w-3.5 h-3.5 rounded-full" />
+              <span className="text-[10px]">{run.actor.login}</span>
+            </span>
+          )}
         </div>
       </div>
       <button

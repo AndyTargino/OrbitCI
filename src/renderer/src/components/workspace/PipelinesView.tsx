@@ -34,6 +34,7 @@ import {
 import type { WorkflowFile, WorkflowInput } from '@shared/types'
 import jsYaml from 'js-yaml'
 import { useTranslation } from 'react-i18next'
+import { PipelineGraph, type GraphJob } from '@/components/shared/PipelineGraph'
 
 interface Props {
   repoId: string
@@ -121,121 +122,17 @@ function getTriggerClass(trigger: string): string {
   return TRIGGER_COLORS[trigger] ?? 'bg-muted text-muted-foreground border-border'
 }
 
-// ── GitHub Actions-style pipeline graph ─────────────────────────────────────
+// ── Convert ParsedWorkflow jobs to GraphJob[] for PipelineGraph ──────────────
 
-function WorkflowGraph({ workflow }: { workflow: ParsedWorkflow }): JSX.Element {
-  // Topological sort into levels
-  const levels: WorkflowJob[][] = []
-  const placed = new Set<string>()
-
-  let remaining = [...workflow.jobs]
-  while (remaining.length > 0) {
-    const level = remaining.filter((j) =>
-      j.needs.length === 0 || j.needs.every((n) => placed.has(n))
-    )
-    if (level.length === 0) {
-      levels.push(remaining)
-      break
-    }
-    levels.push(level)
-    level.forEach((j) => placed.add(j.id))
-    remaining = remaining.filter((j) => !placed.has(j.id))
-  }
-
-  // Calculate positions for SVG connectors
-  const NODE_W = 180
-  const NODE_H = 40
-  const GAP_X = 60
-  const GAP_Y = 16
-  const LEVEL_W = NODE_W + GAP_X
-
-  // Map job id → { level, index within level }
-  const jobPositions = new Map<string, { x: number; y: number; level: number }>()
-  let maxRows = 0
-  levels.forEach((level, li) => {
-    if (level.length > maxRows) maxRows = level.length
-    level.forEach((job, ji) => {
-      jobPositions.set(job.id, {
-        x: li * LEVEL_W,
-        y: ji * (NODE_H + GAP_Y),
-        level: li
-      })
-    })
-  })
-
-  const totalW = levels.length * LEVEL_W - GAP_X
-  const totalH = maxRows * (NODE_H + GAP_Y) - GAP_Y
-
-  // Build connector lines
-  const connectors: { x1: number; y1: number; x2: number; y2: number }[] = []
-  for (const job of workflow.jobs) {
-    const toPos = jobPositions.get(job.id)
-    if (!toPos) continue
-    for (const need of job.needs) {
-      const fromPos = jobPositions.get(need)
-      if (!fromPos) continue
-      connectors.push({
-        x1: fromPos.x + NODE_W,
-        y1: fromPos.y + NODE_H / 2,
-        x2: toPos.x,
-        y2: toPos.y + NODE_H / 2
-      })
-    }
-  }
-
-  return (
-    <div className="overflow-x-auto">
-      <div className="relative" style={{ width: totalW, height: totalH, minWidth: totalW }}>
-        {/* SVG connectors */}
-        <svg
-          className="absolute inset-0 pointer-events-none"
-          width={totalW}
-          height={totalH}
-          style={{ overflow: 'visible' }}
-        >
-          {connectors.map((c, i) => {
-            const midX = (c.x1 + c.x2) / 2
-            return (
-              <path
-                key={i}
-                d={`M ${c.x1} ${c.y1} C ${midX} ${c.y1}, ${midX} ${c.y2}, ${c.x2} ${c.y2}`}
-                fill="none"
-                stroke="hsl(var(--muted-foreground) / 0.3)"
-                strokeWidth="2"
-                strokeDasharray="none"
-              />
-            )
-          })}
-        </svg>
-
-        {/* Job nodes */}
-        {workflow.jobs.map((job) => {
-          const pos = jobPositions.get(job.id)
-          if (!pos) return null
-          return (
-            <div
-              key={job.id}
-              className="absolute flex items-center gap-2.5 rounded-lg border border-border bg-card hover:border-muted-foreground/40 transition-colors px-3 cursor-default"
-              style={{
-                left: pos.x,
-                top: pos.y,
-                width: NODE_W,
-                height: NODE_H
-              }}
-            >
-              <div className="w-4 h-4 rounded-full border-2 border-muted-foreground/40 flex items-center justify-center shrink-0">
-                <div className="w-1.5 h-1.5 rounded-full bg-muted-foreground/40" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="text-[12px] font-medium truncate leading-tight">{job.name}</p>
-                <p className="text-[10px] text-muted-foreground truncate leading-tight">{job.runsOn}</p>
-              </div>
-            </div>
-          )
-        })}
-      </div>
-    </div>
-  )
+function workflowToGraphJobs(workflow: ParsedWorkflow): GraphJob[] {
+  return workflow.jobs.map((job) => ({
+    id: job.id,
+    name: job.name,
+    runsOn: job.runsOn,
+    needs: job.needs,
+    status: 'pending',
+    durationMs: null,
+  }))
 }
 
 // ── Expandable Job Card (GitHub Actions style) ──────────────────────────────
@@ -519,7 +416,7 @@ export function PipelinesView({ repoId, localPath }: Props): JSX.Element {
   const executeRun = async (file: string, inputs?: Record<string, string>) => {
     try {
       setRunning(file)
-      const runId = await electron.workflows.run(repoId, file, inputs)
+      const { runId } = await electron.workflows.run(repoId, file, inputs)
       notify('success', t('workspace.pipelines.workflow_started', 'Workflow started'), `${t('common.run_id', 'Run ID')}: ${runId.slice(0, 8)}`)
       setShowDispatch(false)
     } catch (err) {
@@ -1212,16 +1109,12 @@ export function PipelinesView({ repoId, localPath }: Props): JSX.Element {
                         </div>
 
                         {/* Pipeline graph */}
-                        {parsedWorkflow.jobs.length > 1 && (
-                          <div>
-                            <div className="flex items-center gap-1.5 mb-2">
-                              <Terminal className="h-3.5 w-3.5 text-muted-foreground" />
-                              <span className="text-[12px] font-medium text-muted-foreground">Pipeline</span>
-                            </div>
-                            <div className="rounded-lg border border-border bg-card/50 p-4 overflow-x-auto">
-                              <WorkflowGraph workflow={parsedWorkflow} />
-                            </div>
-                          </div>
+                        {parsedWorkflow.jobs.length > 0 && (
+                          <PipelineGraph
+                            graphJobs={workflowToGraphJobs(parsedWorkflow)}
+                            workflowName={parsedWorkflow.name}
+                            event={parsedWorkflow.triggers.join(', ')}
+                          />
                         )}
 
                         {/* Jobs - expandable cards */}

@@ -1,0 +1,161 @@
+[DB] Banco de dados atualizado (11 migrations j├í aplicadas)
+[DB] Ready at C:\Users\AndyT\.orbitci\orbit.db
+[ScheduleService] Registered: AndyTargino/wwebjs-electron/sync_and_update_main.yml -> cron "0 */6 * * *"
+[ScheduleService] Started -- 1 repo(s) with schedules
+[Docker] Cleaned up orphaned container: 5496b3097b60
+[OrbitCI Job] [71eb56ca/release] Starting job...
+[OrbitCI Job] [71eb56ca/release] Image: ubuntu:22.04 | runs-on: ubuntu-latest | container: none
+[OrbitCI Job] [71eb56ca/release] [Docker] Preparing image: ubuntu:22.04
+[OrbitCI Docker] Building bootstrapped image: orbitci/ubuntu-22.04:bootstrapped (one-time, ~30s)...
+[OrbitCI Docker] Image ready (cached): ubuntu:22.04
+[OrbitCI Docker] Bootstrapped image built: orbitci/ubuntu-22.04:bootstrapped
+[OrbitCI Job] [71eb56ca/release] Using bootstrapped image: orbitci/ubuntu-22.04:bootstrapped
+[OrbitCI Docker] Creating container "orbitci-ubuntu2204-aurora-release-71eb56ca" | image=orbitci/ubuntu-22.04:bootstrapped | job=release
+[OrbitCI Docker] Container started: orbitci-ubuntu2204-aurora-release-71eb56ca (1193a8ad800a) | workspace volume: orbitci-ws-release-71eb56ca
+[OrbitCI Job] [71eb56ca/release] [OK] Container started: 1193a8ad800a (orbitci/ubuntu-22.04:bootstrapped)
+[OrbitCI Job] [71eb56ca/release] Running container bootstrap...
+[OrbitCI Job] [71eb56ca/release] Bootstrap complete.
+[OrbitCI Job] [71eb56ca/release] >> Job: release
+[OrbitCI Job] [71eb56ca/release] Executing 12 steps...
+[OrbitCI Job] [71eb56ca/release] Step 1/12: Checkout
+[OrbitCI Job] [71eb56ca/release] [Checkout]   > Checkout
+[OrbitCI Job] [71eb56ca/release] [Checkout]   checkout: current ref
+[OrbitCI Job] [71eb56ca/release] [OK] Checkout (328ms)
+[OrbitCI Job] [71eb56ca/release] Step 2/12: Skip if release commit
+[OrbitCI Job] [71eb56ca/release] [Skip if release commit]   > Skip if release commit
+[OrbitCI Job] [71eb56ca/release] Step 'check_commit' outputs: {"skip":"true"}
+[OrbitCI Job] [71eb56ca/release] [OK] Skip if release commit (135ms)
+[OrbitCI Job] [71eb56ca/release] Step 3/12: Setup Node.js
+[OrbitCI Job] [71eb56ca/release] [Setup Node.js]   > Setup Node.js
+[OrbitCI Job] [71eb56ca/release] [Setup Node.js] [SKIP] Skipped (condition: steps.check_commit.outputs.skip != 'true')
+[OrbitCI Job] [71eb56ca/release] [SKIP] Setup Node.js (0ms)
+[OrbitCI Job] [71eb56ca/release] Step 4/12: Install dependencies
+[OrbitCI Job] [71eb56ca/release] [Install dependencies]   > Install dependencies
+[OrbitCI Job] [71eb56ca/release] [Install dependencies] [SKIP] Skipped (condition: steps.check_commit.outputs.skip != 'true')
+[OrbitCI Job] [71eb56ca/release] [SKIP] Install dependencies (0ms)
+[OrbitCI Job] [71eb56ca/release] Step 5/12: Run tests
+[OrbitCI Job] [71eb56ca/release] [Run tests]   > Run tests
+[OrbitCI Job] [71eb56ca/release] [Run tests] [SKIP] Skipped (condition: steps.check_commit.outputs.skip != 'true')
+[OrbitCI Job] [71eb56ca/release] [SKIP] Run tests (0ms)
+[OrbitCI Job] [71eb56ca/release] Step 6/12: Build
+[OrbitCI Job] [71eb56ca/release] [Build]   > Build
+[OrbitCI Job] [71eb56ca/release] [Build] [SKIP] Skipped (condition: steps.check_commit.outputs.skip != 'true')
+[OrbitCI Job] [71eb56ca/release] [SKIP] Build (1ms)
+[OrbitCI Job] [71eb56ca/release] Step 7/12: Determine version bump
+[OrbitCI Job] [71eb56ca/release] [Determine version bump]   > Determine version bump
+[OrbitCI Job] [71eb56ca/release] [Determine version bump] [SKIP] Skipped (condition: steps.check_commit.outputs.skip != 'true')
+[OrbitCI Job] [71eb56ca/release] [SKIP] Determine version bump (0ms)
+[OrbitCI Job] [71eb56ca/release] Step 8/12: Generate release notes
+[OrbitCI Job] [71eb56ca/release] [Generate release notes]   > Generate release notes
+[OrbitCI Job] [71eb56ca/release] [Generate release notes] [SKIP] Skipped (condition: steps.check_commit.outputs.skip != 'true' && steps.bump.outputs.skip != 'true')
+[OrbitCI Job] [71eb56ca/release] [SKIP] Generate release notes (0ms)
+[OrbitCI Job] [71eb56ca/release] Step 9/12: Update package.json version
+[OrbitCI Job] [71eb56ca/release] [Update package.json version]   > Update package.json version
+[OrbitCI Job] [71eb56ca/release] [Update package.json version] [SKIP] Skipped (condition: steps.check_commit.outputs.skip != 'true' && steps.bump.outputs.skip != 'true')
+[OrbitCI Job] [71eb56ca/release] [SKIP] Update package.json version (0ms)
+[OrbitCI Job] [71eb56ca/release] Step 10/12: Commit version bump
+[OrbitCI Job] [71eb56ca/release] [Commit version bump]   > Commit version bump
+[OrbitCI Job] [71eb56ca/release] [Commit version bump] [SKIP] Skipped (condition: steps.check_commit.outputs.skip != 'true' && steps.bump.outputs.skip != 'true')
+[OrbitCI Job] [71eb56ca/release] [SKIP] Commit version bump (1ms)
+[OrbitCI Job] [71eb56ca/release] Step 11/12: Create tag
+[OrbitCI Job] [71eb56ca/release] [Create tag]   > Create tag
+[OrbitCI Job] [71eb56ca/release] [Create tag] [SKIP] Skipped (condition: steps.check_commit.outputs.skip != 'true' && steps.bump.outputs.skip != 'true')
+[OrbitCI Job] [71eb56ca/release] [SKIP] Create tag (0ms)
+[OrbitCI Job] [71eb56ca/release] Step 12/12: Create GitHub Release
+[OrbitCI Job] [71eb56ca/release] [Create GitHub Release]   > Create GitHub Release
+[OrbitCI Job] [71eb56ca/release] [Create GitHub Release] [SKIP] Skipped (condition: steps.check_commit.outputs.skip != 'true' && steps.bump.outputs.skip != 'true')
+[OrbitCI Job] [71eb56ca/release] [SKIP] Create GitHub Release (1ms)
+[OrbitCI Job] [71eb56ca/release] Cleaning up containers...
+[OrbitCI Job] [71eb56ca/release] [OK] Container returned to pool: 1193a8ad800a (ubuntu:22.04)
+[OrbitCI Job] [71eb56ca/release] Container pooled for reuse: 1193a8ad800a
+[OrbitCI Job] [71eb56ca/release] Job finished: success (157320ms)
+[OrbitCI Job] [71eb56ca/build-windows] Starting job...
+[OrbitCI Job] [71eb56ca/build-linux] Starting job...
+[OrbitCI Job] [71eb56ca/build-macos] Starting job...
+[OrbitCI Job] [71eb56ca/build-windows] Image: ubuntu:22.04 | runs-on: windows-latest | container: none
+[OrbitCI Job] [71eb56ca/build-windows] [Docker] Preparing image: ubuntu:22.04
+[OrbitCI Job] [71eb56ca/build-linux] Image: ubuntu:22.04 | runs-on: ubuntu-latest | container: none
+[OrbitCI Job] [71eb56ca/build-linux] [Docker] Preparing image: ubuntu:22.04
+[OrbitCI Job] [71eb56ca/build-macos] Image: ubuntu:22.04 | runs-on: macos-latest | container: none
+[OrbitCI Job] [71eb56ca/build-macos] [Docker] Preparing image: ubuntu:22.04
+[OrbitCI Job] [71eb56ca/build-windows] [OK] Reusing container: 1193a8ad800a (ubuntu:22.04)
+[OrbitCI Job] [71eb56ca/build-windows] Reusing pooled container 1193a8ad800a
+[OrbitCI Docker] Bootstrapped image ready: orbitci/ubuntu-22.04:bootstrapped (v4)
+[OrbitCI Job] [71eb56ca/build-macos] Using bootstrapped image: orbitci/ubuntu-22.04:bootstrapped
+[OrbitCI Docker] Creating container "orbitci-ubuntu2204-booster-build-macos-71eb56ca" | image=orbitci/ubuntu-22.04:bootstrapped | job=build-macos
+[OrbitCI Docker] Bootstrapped image ready: orbitci/ubuntu-22.04:bootstrapped (v4)
+[OrbitCI Job] [71eb56ca/build-linux] Using bootstrapped image: orbitci/ubuntu-22.04:bootstrapped
+[OrbitCI Docker] Creating container "orbitci-ubuntu2204-liftoff-build-linux-71eb56ca" | image=orbitci/ubuntu-22.04:bootstrapped | job=build-linux
+[OrbitCI Docker] Container started: orbitci-ubuntu2204-booster-build-macos-71eb56ca (f593e7aec63b) | workspace volume: orbitci-ws-build-macos-71eb56ca
+[OrbitCI Job] [71eb56ca/build-macos] [OK] Container started: f593e7aec63b (orbitci/ubuntu-22.04:bootstrapped)
+[OrbitCI Job] [71eb56ca/build-macos] Running container bootstrap...
+[OrbitCI Docker] Container started: orbitci-ubuntu2204-liftoff-build-linux-71eb56ca (71042905e0f4) | workspace volume: orbitci-ws-build-linux-71eb56ca
+[OrbitCI Job] [71eb56ca/build-linux] [OK] Container started: 71042905e0f4 (orbitci/ubuntu-22.04:bootstrapped)
+[OrbitCI Job] [71eb56ca/build-linux] Running container bootstrap...
+[OrbitCI Job] [71eb56ca/build-windows] Cross-compilation: instalando ferramentas para Windows
+[OrbitCI Job] [71eb56ca/build-linux] Bootstrap complete.
+[OrbitCI Job] [71eb56ca/build-linux] >> Job: build-linux
+[OrbitCI Job] [71eb56ca/build-linux] Executing 5 steps...
+[OrbitCI Job] [71eb56ca/build-linux] Step 1/5: Checkout release tag
+[OrbitCI Job] [71eb56ca/build-linux] [Checkout release tag]   > Checkout release tag
+[OrbitCI Job] [71eb56ca/build-linux] [Checkout release tag]   checkout: current ref
+[OrbitCI Job] [71eb56ca/build-macos] Cross-compilation: instalando ferramentas para macOS
+[OrbitCI Job] [71eb56ca/build-linux] [OK] Checkout release tag (3462ms)
+[OrbitCI Job] [71eb56ca/build-linux] Step 2/5: Setup Node.js
+[OrbitCI Job] [71eb56ca/build-linux] [Setup Node.js]   > Setup Node.js
+[OrbitCI Job] [71eb56ca/build-linux] [Setup Node.js]   setup-node: v20
+[OrbitCI Job] [71eb56ca/build-linux] [OK] Setup Node.js (645ms)
+[OrbitCI Job] [71eb56ca/build-linux] Step 3/5: Install system dependencies
+[OrbitCI Job] [71eb56ca/build-linux] [Install system dependencies]   > Install system dependencies
+[OrbitCI Job] [71eb56ca/build-macos] Bootstrap complete.
+[OrbitCI Job] [71eb56ca/build-macos] >> Job: build-macos
+[OrbitCI Job] [71eb56ca/build-macos] Executing 5 steps...
+[OrbitCI Job] [71eb56ca/build-macos] Step 1/5: Checkout release tag
+[OrbitCI Job] [71eb56ca/build-macos] [Checkout release tag]   > Checkout release tag
+[OrbitCI Job] [71eb56ca/build-macos] [Checkout release tag]   checkout: current ref
+[OrbitCI Job] [71eb56ca/build-macos] [OK] Checkout release tag (3289ms)
+[OrbitCI Job] [71eb56ca/build-macos] Step 2/5: Setup Node.js
+[OrbitCI Job] [71eb56ca/build-macos] [Setup Node.js]   > Setup Node.js
+[OrbitCI Job] [71eb56ca/build-macos] [Setup Node.js]   setup-node: v20
+[OrbitCI Job] [71eb56ca/build-macos] [OK] Setup Node.js (702ms)
+[OrbitCI Job] [71eb56ca/build-macos] Step 3/5: Install Dependencies
+[OrbitCI Job] [71eb56ca/build-macos] [Install Dependencies]   > Install Dependencies
+[OrbitCI Job] [71eb56ca/build-linux] [OK] Install system dependencies (6983ms)
+[OrbitCI Job] [71eb56ca/build-linux] Step 4/5: Install Dependencies
+[OrbitCI Job] [71eb56ca/build-linux] [Install Dependencies]   > Install Dependencies
+[OrbitCI Job] [71eb56ca/build-macos] [OK] Install Dependencies (78595ms)
+[OrbitCI Job] [71eb56ca/build-macos] Step 4/5: Install Python setuptools
+[OrbitCI Job] [71eb56ca/build-macos] [Install Python setuptools]   > Install Python setuptools
+[OrbitCI Job] [71eb56ca/build-linux] [OK] Install Dependencies (78286ms)
+[OrbitCI Job] [71eb56ca/build-linux] Step 5/5: Build and Publish
+[OrbitCI Job] [71eb56ca/build-linux] [Build and Publish]   > Build and Publish
+[OrbitCI Job] [71eb56ca/build-macos] [OK] Install Python setuptools (2756ms)
+[OrbitCI Job] [71eb56ca/build-macos] Step 5/5: Build and Publish
+[OrbitCI Job] [71eb56ca/build-macos] [Build and Publish]   > Build and Publish
+[OrbitCI Docker] Exec exit code 1 | cmd: npm run build
+npx electron-builder --macos --publish always
+...
+[OrbitCI Docker] Last 15 lines of output:
+    at Function.Module._load (node:internal/modules/cjs/loader:1038:27)
+    at Module.require (node:internal/modules/cjs/loader:1289:19)
+    at require (node:internal/modules/helpers:182:18)
+    at Object.<anonymous> (/workspace/node_modules/dmg-builder/src/dmgLicense.ts:7:1)
+    at Module._compile (node:internal/modules/cjs/loader:1521:14)
+    at Object.Module._extensions..js (node:internal/modules/cjs/loader:1623:10)
+    at Module.load (node:internal/modules/cjs/loader:1266:32)
+    at Function.Module._load (node:internal/modules/cjs/loader:1091:12)
+    at Module.require (node:internal/modules/cjs/loader:1289:19)
+    at require (node:internal/modules/helpers:182:18)
+    at Object.<anonymous> (/workspace/node_modules/dmg-builder/src/dmg.ts:13:1)
+    at Module._compile (node:internal/modules/cjs/loader:1521:14)
+    at Object.Module._extensions..js (node:internal/modules/cjs/loader:1623:10)
+    at Module.load (node:internal/modules/cjs/loader:1266:32)
+    at Function.Module._load (node:internal/modules/cjs/loader:1091:12)
+[OrbitCI Job] [71eb56ca/build-macos] [FAIL] Build and Publish: Exit code 1
+[OrbitCI Job] [71eb56ca/build-macos] [Build and Publish] [FAIL] Build and Publish: Exit code 1
+[OrbitCI Job] [71eb56ca/build-macos] Cleaning up containers...
+[OrbitCI Docker] Stopping container: orbitci-ubuntu2204-booster-build-macos-71eb56ca
+[OrbitCI Docker] Removed container: orbitci-ubuntu2204-booster-build-macos-71eb56ca
+[OrbitCI Docker] Removed workspace volume: orbitci-ws-build-macos-71eb56ca
+[OrbitCI Job] [71eb56ca/build-macos] [OK] Container removed: f593e7aec63b
+[OrbitCI Job] [71eb56ca/build-macos] Job finished: failure (120271ms)

@@ -49,7 +49,7 @@ export function RepoOverview(): JSX.Element {
   }
 
   const runWorkflow = async (file: string, inputs: Record<string, string>) => {
-    const runId = await electron.workflows.run(repoId, file, inputs)
+    const { runId } = await electron.workflows.run(repoId, file, inputs)
     navigate(`/run/${runId}`)
   }
 

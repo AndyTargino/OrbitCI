@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
-  GitCommit, Loader2, RotateCcw, GitMerge, Copy, MoreHorizontal, ChevronDown
+  GitCommit, Loader2, RotateCcw, GitMerge, Copy, MoreHorizontal, ChevronDown,
+  Search, FileText
 } from 'lucide-react'
 import { electron } from '@/lib/electron'
 import { useRepoStore } from '@/store'
@@ -12,12 +13,37 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
-import { formatRelativeTime } from '@/lib/utils'
+import { cn, formatRelativeTime } from '@/lib/utils'
 import { notify } from '@/lib/notify'
 import { useRepoDetail } from './RepoDetail'
 import type { GitCommit as GitCommitType } from '@shared/types'
 
 const LOAD_SIZE = 50
+
+// Group commits by date (e.g. "Today", "Yesterday", "Mar 4, 2026")
+function groupCommitsByDate(commits: GitCommitType[]): { label: string; dateKey: string; commits: GitCommitType[] }[] {
+  const groups: Map<string, GitCommitType[]> = new Map()
+  const today = new Date().toDateString()
+  const yesterday = new Date(Date.now() - 86400000).toDateString()
+
+  for (const commit of commits) {
+    const d = new Date(commit.date)
+    const ds = d.toDateString()
+    let key: string
+    if (ds === today) key = 'today'
+    else if (ds === yesterday) key = 'yesterday'
+    else key = d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
+    const arr = groups.get(key) ?? []
+    arr.push(commit)
+    groups.set(key, arr)
+  }
+
+  return Array.from(groups.entries()).map(([label, commits]) => ({
+    label,
+    dateKey: label,
+    commits
+  }))
+}
 
 export function RepoHistory(): JSX.Element {
   const { t } = useTranslation()
@@ -32,6 +58,10 @@ export function RepoHistory(): JSX.Element {
   const [actionInProgress, setActionInProgress] = useState<string | null>(null)
   const [confirmRevert, setConfirmRevert] = useState<{ sha: string; message: string } | null>(null)
   const [confirmCherryPick, setConfirmCherryPick] = useState<{ sha: string; message: string } | null>(null)
+  const [searchTerm, setSearchTerm] = useState('')
+  const [selectedSha, setSelectedSha] = useState<string | null>(null)
+  const [commitDiff, setCommitDiff] = useState<string | null>(null)
+  const [diffLoading, setDiffLoading] = useState(false)
 
   useEffect(() => {
     if (!repoId || !repo?.localPath) return
@@ -53,6 +83,24 @@ export function RepoHistory(): JSX.Element {
   const handleLoadMore = () => {
     const next = limit + LOAD_SIZE
     loadCommits(next)
+  }
+
+  const handleSelectCommit = async (sha: string) => {
+    if (selectedSha === sha) {
+      setSelectedSha(null)
+      setCommitDiff(null)
+      return
+    }
+    setSelectedSha(sha)
+    setDiffLoading(true)
+    try {
+      const diff = await electron.git.showCommit(repoId, sha)
+      setCommitDiff(diff)
+    } catch {
+      setCommitDiff(null)
+    } finally {
+      setDiffLoading(false)
+    }
   }
 
   const executeRevert = async () => {
@@ -89,9 +137,21 @@ export function RepoHistory(): JSX.Element {
 
   const handleCopySha = (sha: string) => {
     navigator.clipboard.writeText(sha).then(() => {
-      notify('success', t('workspace.changes.path_copied', 'SHA copied'), sha)
+      notify('success', t('workspace.history.sha_copied', 'SHA copied to clipboard'), sha.slice(0, 7))
     }).catch(() => {})
   }
+
+  const filteredCommits = useMemo(() => {
+    if (!searchTerm.trim()) return commits
+    const q = searchTerm.toLowerCase()
+    return commits.filter((c) =>
+      c.message.toLowerCase().includes(q) ||
+      c.author.toLowerCase().includes(q) ||
+      c.hash.startsWith(q)
+    )
+  }, [commits, searchTerm])
+
+  const grouped = useMemo(() => groupCommitsByDate(filteredCommits), [filteredCommits])
 
   if (!repo?.localPath) {
     return (
@@ -104,19 +164,37 @@ export function RepoHistory(): JSX.Element {
     )
   }
 
+  const dateLabel = (key: string) => {
+    if (key === 'today') return t('common.time.today', 'Today')
+    if (key === 'yesterday') return 'Yesterday'
+    return key
+  }
+
   return (
     <div className="h-full flex flex-col overflow-hidden">
       {/* Toolbar */}
-      <div className="px-6 py-2.5 border-b border-border bg-card/20 flex items-center justify-between shrink-0">
-        <span className="text-[12px] text-muted-foreground">
-          {commits.length > 0
-            ? t('workspace.history.commits_loaded_count', { count: commits.length, defaultValue: '{{count}} commits loaded' })
-            : t('workspace.history.commit_history_label', 'Commit history')}
-        </span>
+      <div className="px-5 py-2.5 border-b border-border bg-card/20 flex items-center justify-between gap-3 shrink-0">
+        <div className="flex items-center gap-3 flex-1 min-w-0">
+          <div className="relative flex-1 max-w-[280px]">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground/60" />
+            <input
+              type="text"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder={t('workspace.history.search_placeholder', 'Search commits...')}
+              className="w-full h-7 pl-8 pr-3 rounded-md border border-border bg-muted/30 text-[12px] text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-ring/40 focus:border-ring/40"
+            />
+          </div>
+          <span className="text-[11px] text-muted-foreground shrink-0 tabular-nums">
+            {filteredCommits.length > 0
+              ? t('workspace.history.commits_loaded_count', { count: filteredCommits.length, defaultValue: '{{count}} commits loaded' })
+              : t('workspace.history.commit_history_label', 'Commit history')}
+          </span>
+        </div>
         <Button
           variant="outline"
           size="sm"
-          className="h-7 text-[12px] px-2.5 gap-1.5"
+          className="h-7 text-[12px] px-2.5 gap-1.5 shrink-0"
           onClick={() => loadCommits(limit, true)}
           disabled={isLoading}
         >
@@ -131,77 +209,150 @@ export function RepoHistory(): JSX.Element {
             <Loader2 className="h-5 w-5 animate-spin" />
             <span className="text-[13px]">{t('workspace.history.loading_history', 'Loading history...')}</span>
           </div>
-        ) : commits.length === 0 ? (
+        ) : filteredCommits.length === 0 ? (
           <EmptyState
             icon={GitCommit}
-            title={t('workspace.history.no_commits_found', 'No commits found')}
-            description={t('workspace.history.empty_history_desc', 'The repository history is empty')}
+            title={searchTerm ? t('common.no_results', 'No results found') : t('workspace.history.no_commits_found', 'No commits found')}
+            description={searchTerm ? `No commits matching "${searchTerm}"` : t('workspace.history.empty_history_desc', 'The repository history is empty')}
           />
         ) : (
           <>
-            <div className="divide-y divide-border">
-              {commits.map((commit) => {
-                const isPending = actionInProgress === commit.hash
-                return (
-                  <div key={commit.hash} className="flex items-start gap-3 px-5 py-3 group hover:bg-accent/20 transition-colors">
-                    {/* Visual commit line */}
-                    <div className="flex flex-col items-center mt-1 shrink-0">
-                      <GitCommit className="h-3.5 w-3.5 text-primary/50" />
-                    </div>
+            {grouped.map((group) => (
+              <div key={group.dateKey}>
+                {/* Date header */}
+                <div className="sticky top-0 z-10 px-5 py-1.5 bg-background/95 backdrop-blur-sm border-b border-border/50">
+                  <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
+                    {dateLabel(group.dateKey)}
+                  </span>
+                </div>
 
-                    {/* Content */}
-                    <div className="min-w-0 flex-1">
-                      <p className="text-[13px] font-medium text-foreground leading-snug line-clamp-2">
-                        {commit.message}
-                      </p>
-                      <div className="flex items-center gap-3 mt-1 text-[11px] text-muted-foreground flex-wrap">
-                        <code className="font-mono text-primary/70 bg-primary/5 px-1.5 py-0.5 rounded text-[10px]">
-                          {commit.hash.slice(0, 7)}
-                        </code>
-                        <span>{commit.author}</span>
-                        <span>{formatRelativeTime(commit.date)}</span>
-                      </div>
-                    </div>
+                {/* Commits with timeline */}
+                <div className="relative">
+                  {/* Timeline line */}
+                  <div className="absolute left-[31px] top-0 bottom-0 w-px bg-border" />
 
-                    {/* Actions dropdown */}
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-7 w-7 p-0 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
-                          disabled={isPending}
-                        >
-                          {isPending ? (
-                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                          ) : (
-                            <MoreHorizontal className="h-3.5 w-3.5" />
+                  {group.commits.map((commit, idx) => {
+                    const isPending = actionInProgress === commit.hash
+                    const isSelected = selectedSha === commit.hash
+                    const isLast = idx === group.commits.length - 1
+                    // Extract initials from author
+                    const initials = commit.author
+                      .split(/[\s.]+/)
+                      .slice(0, 2)
+                      .map((p) => p[0]?.toUpperCase() ?? '')
+                      .join('')
+
+                    return (
+                      <div key={commit.hash}>
+                        <div
+                          className={cn(
+                            'relative flex items-start gap-3 px-5 py-2.5 group transition-colors cursor-pointer',
+                            isSelected ? 'bg-primary/5' : 'hover:bg-accent/30'
                           )}
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end" className="w-44 text-[13px]">
-                        <DropdownMenuItem onClick={() => handleCopySha(commit.hash)}>
-                          <Copy className="h-3.5 w-3.5 mr-2" />
-                          {t('workspace.history.copy_sha', 'Copy SHA')}
-                        </DropdownMenuItem>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem onClick={() => setConfirmCherryPick({ sha: commit.hash, message: commit.message })}>
-                          <GitMerge className="h-3.5 w-3.5 mr-2" />
-                          {t('workspace.history.cherry_pick', 'Cherry-pick')}
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={() => setConfirmRevert({ sha: commit.hash, message: commit.message })}
-                          className="text-destructive focus:text-destructive"
+                          onClick={() => handleSelectCommit(commit.hash)}
                         >
-                          <RotateCcw className="h-3.5 w-3.5 mr-2" />
-                          {t('workspace.history.revert', 'Revert')}
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </div>
-                )
-              })}
-            </div>
+                          {/* Timeline dot */}
+                          <div className="relative z-10 mt-0.5 shrink-0">
+                            <div className={cn(
+                              'w-[14px] h-[14px] rounded-full border-2 flex items-center justify-center',
+                              isSelected
+                                ? 'border-primary bg-primary'
+                                : 'border-border bg-background group-hover:border-muted-foreground/50'
+                            )}>
+                              {isSelected && <div className="w-1.5 h-1.5 rounded-full bg-background" />}
+                            </div>
+                          </div>
+
+                          {/* Content */}
+                          <div className="min-w-0 flex-1 py-0.5">
+                            <p className={cn(
+                              'text-[13px] font-medium leading-snug line-clamp-2 break-words',
+                              isSelected ? 'text-foreground' : 'text-foreground/90'
+                            )}>
+                              {commit.message.split('\n')[0]}
+                            </p>
+                            <div className="flex items-center gap-2.5 mt-1.5 text-[11px] text-muted-foreground">
+                              {/* Author avatar */}
+                              <div className="flex items-center gap-1.5">
+                                <div className="w-4 h-4 rounded-full bg-muted flex items-center justify-center text-[8px] font-bold text-muted-foreground shrink-0">
+                                  {initials}
+                                </div>
+                                <span className="font-medium text-foreground/70">{commit.author}</span>
+                              </div>
+                              <span className="text-muted-foreground/50">{formatRelativeTime(commit.date)}</span>
+                              <button
+                                onClick={(e) => { e.stopPropagation(); handleCopySha(commit.hash) }}
+                                className="font-mono text-primary/60 hover:text-primary bg-primary/5 hover:bg-primary/10 px-1.5 py-0.5 rounded text-[10px] transition-colors"
+                                title={t('workspace.history.copy_sha_tooltip', 'Copy full commit hash')}
+                              >
+                                {commit.hash.slice(0, 7)}
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Actions */}
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 w-7 p-0 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity shrink-0 mt-0.5"
+                                disabled={isPending}
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                {isPending ? (
+                                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                ) : (
+                                  <MoreHorizontal className="h-3.5 w-3.5" />
+                                )}
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="w-44 text-[13px]">
+                              <DropdownMenuItem onClick={() => handleCopySha(commit.hash)}>
+                                <Copy className="h-3.5 w-3.5 mr-2" />
+                                {t('workspace.history.copy_sha', 'Copy SHA')}
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem onClick={() => setConfirmCherryPick({ sha: commit.hash, message: commit.message })}>
+                                <GitMerge className="h-3.5 w-3.5 mr-2" />
+                                {t('workspace.history.cherry_pick', 'Cherry-pick')}
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={() => setConfirmRevert({ sha: commit.hash, message: commit.message })}
+                                className="text-destructive focus:text-destructive"
+                              >
+                                <RotateCcw className="h-3.5 w-3.5 mr-2" />
+                                {t('workspace.history.revert', 'Revert')}
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
+
+                        {/* Expanded diff panel */}
+                        {isSelected && (
+                          <div className="ml-[43px] mr-5 mb-2 rounded-md border border-border bg-card/50 overflow-hidden">
+                            {diffLoading ? (
+                              <div className="flex items-center justify-center py-6 gap-2 text-muted-foreground">
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                                <span className="text-[12px]">{t('workspace.history.loading_changes', 'Loading changes...')}</span>
+                              </div>
+                            ) : commitDiff ? (
+                              <div className="max-h-[300px] overflow-auto">
+                                <DiffBlock diff={commitDiff} />
+                              </div>
+                            ) : (
+                              <div className="py-4 text-center text-[12px] text-muted-foreground">
+                                {t('workspace.history.no_diff', 'No diff available for this commit.')}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            ))}
 
             {/* Load more footer */}
             <div className="flex items-center justify-center py-4 border-t border-border/30">
@@ -256,6 +407,44 @@ export function RepoHistory(): JSX.Element {
         variant="warning"
         onConfirm={executeCherryPick}
       />
+    </div>
+  )
+}
+
+// ─── Diff block component ────────────────────────────────────────────────────
+function DiffBlock({ diff }: { diff: string }): JSX.Element {
+  const lines = diff.split('\n')
+  // Count changed files from "diff --git" headers
+  const fileCount = lines.filter((l) => l.startsWith('diff --git')).length
+
+  return (
+    <div>
+      {fileCount > 0 && (
+        <div className="px-3 py-1.5 border-b border-border bg-muted/30 text-[11px] text-muted-foreground flex items-center gap-1.5">
+          <FileText className="h-3 w-3" />
+          {fileCount} file{fileCount !== 1 ? 's' : ''} changed
+        </div>
+      )}
+      <pre className="text-[11px] leading-[1.6] font-mono overflow-x-auto">
+        {lines.slice(0, 200).map((line, i) => {
+          let cls = 'px-3 '
+          if (line.startsWith('+') && !line.startsWith('+++')) cls += 'bg-[#3fb950]/8 text-[#3fb950]'
+          else if (line.startsWith('-') && !line.startsWith('---')) cls += 'bg-[#f85149]/8 text-[#f85149]'
+          else if (line.startsWith('@@')) cls += 'text-[#58a6ff] bg-[#58a6ff]/5'
+          else if (line.startsWith('diff --git')) cls += 'text-foreground/80 font-semibold border-t border-border/30 pt-1 mt-1'
+          else cls += 'text-muted-foreground/70'
+          return (
+            <div key={i} className={cls}>
+              {line || ' '}
+            </div>
+          )
+        })}
+        {lines.length > 200 && (
+          <div className="px-3 py-2 text-muted-foreground/50 text-center border-t border-border/30">
+            ... {lines.length - 200} more lines
+          </div>
+        )}
+      </pre>
     </div>
   )
 }

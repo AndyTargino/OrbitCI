@@ -21,7 +21,7 @@ export const gitActions: Record<string, ActionHandler> = {
     }
 
     const sha = await gitEngine.commit(workspace, message)
-    log(`✓ Committed: ${sha.slice(0, 7)} — ${message}`)
+    log(`[OK] Committed: ${sha.slice(0, 7)} -- ${message}`)
     return { sha }
   },
 
@@ -36,13 +36,13 @@ export const gitActions: Record<string, ActionHandler> = {
     } else {
       await gitEngine.push(workspace, remote, branch, withTags)
     }
-    log(`✓ Push para ${remote}/${branch ?? 'HEAD'}${withTags ? ' (com tags)' : ''}`)
+    log(`[OK] Push para ${remote}/${branch ?? 'HEAD'}${withTags ? ' (com tags)' : ''}`)
   },
 
   'git/pull': async ({ with: w, workspace, log }) => {
     const remote = w?.remote ?? 'origin'
     await gitEngine.pull(workspace, remote)
-    log(`✓ Pull realizado`)
+    log(`[OK] Pull realizado`)
   },
 
   'git/tag': async ({ with: w, workspace, log, setOutput }) => {
@@ -50,7 +50,7 @@ export const gitActions: Record<string, ActionHandler> = {
     if (!name) throw new Error('git/tag: parâmetro "name" é obrigatório')
     const message = w?.message
     await gitEngine.createTag(workspace, name, message)
-    log(`✓ Tag criada: ${name}`)
+    log(`[OK] Tag criada: ${name}`)
     setOutput('tag', name)
   },
 
@@ -58,7 +58,7 @@ export const gitActions: Record<string, ActionHandler> = {
     const ref = w?.ref
     if (!ref) throw new Error('git/checkout: parâmetro "ref" é obrigatório')
     await gitEngine.checkout(workspace, ref)
-    log(`✓ Checkout: ${ref}`)
+    log(`[OK] Checkout: ${ref}`)
   },
 
   'git/create-branch': async ({ with: w, workspace, log }) => {
@@ -66,7 +66,7 @@ export const gitActions: Record<string, ActionHandler> = {
     if (!name) throw new Error('git/create-branch: parâmetro "name" é obrigatório')
     const ref = w?.ref
     await gitEngine.createBranch(workspace, name, ref)
-    log(`✓ Branch criada: ${name}`)
+    log(`[OK] Branch criada: ${name}`)
   },
 
   'git/release': async ({ with: w, workspace, log, setOutput }) => {
@@ -91,7 +91,7 @@ export const gitActions: Record<string, ActionHandler> = {
       arc.finalize()
     })
 
-    log(`✓ Release criada: ${zipPath}`)
+    log(`[OK] Release criada: ${zipPath}`)
     setOutput('zip-path', zipPath)
     return { 'zip-path': zipPath }
   }

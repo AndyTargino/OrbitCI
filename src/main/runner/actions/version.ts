@@ -23,7 +23,7 @@ export const versionActions: Record<string, ActionHandler> = {
     content.version = newVersion
     writeFileSync(filePath, JSON.stringify(content, null, 2) + '\n', 'utf-8')
 
-    log(`✓ Version: ${currentVersion} → ${newVersion}`)
+    log(`[OK] Version: ${currentVersion} -> ${newVersion}`)
     setOutput('new-version', newVersion)
     setOutput('old-version', currentVersion)
     env['NEW_VERSION'] = newVersion
@@ -79,11 +79,11 @@ export const versionActions: Record<string, ActionHandler> = {
       if (sections.other.length) changelog += `### Other\n${sections.other.join('\n')}\n\n`
 
       writeFileSync(outputPath, changelog, 'utf-8')
-      log(`✓ CHANGELOG.md gerado com ${commits.length} commits`)
+      log(`[OK] CHANGELOG.md gerado com ${commits.length} commits`)
       setOutput('path', outputPath)
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
-      log(`⚠ Erro ao gerar changelog: ${msg}`)
+      log(`[WARN] Erro ao gerar changelog: ${msg}`)
     }
   }
 }

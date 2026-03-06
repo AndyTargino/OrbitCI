@@ -284,6 +284,102 @@ export async function getJobLogs(
   return redirectRes.text()
 }
 
+// ─── Dashboard analytics endpoints ──────────────────────────────────────────
+
+export interface RepoStats {
+  stargazersCount: number
+  forksCount: number
+  openIssuesCount: number
+  watchersCount: number
+  size: number
+  language: string | null
+}
+
+export async function getRepoStats(owner: string, repo: string): Promise<RepoStats> {
+  const kit = getOctokit()
+  const { data } = await kit.repos.get({ owner, repo })
+  return {
+    stargazersCount: data.stargazers_count,
+    forksCount: data.forks_count,
+    openIssuesCount: data.open_issues_count,
+    watchersCount: data.watchers_count,
+    size: data.size,
+    language: data.language
+  }
+}
+
+export interface PullRequestCounts {
+  open: number
+  closed: number
+  merged: number
+}
+
+export async function getPullRequestCounts(owner: string, repo: string): Promise<PullRequestCounts> {
+  const kit = getOctokit()
+  const [openRes, closedRes] = await Promise.all([
+    kit.pulls.list({ owner, repo, state: 'open', per_page: 1 }),
+    kit.pulls.list({ owner, repo, state: 'closed', per_page: 100 })
+  ])
+  const openCount = openRes.headers?.['x-total-count']
+    ? parseInt(openRes.headers['x-total-count'] as string, 10)
+    : openRes.data.length
+  const mergedCount = closedRes.data.filter((pr) => pr.merged_at !== null).length
+  const closedCount = closedRes.data.length - mergedCount
+  return { open: openCount, closed: closedCount, merged: mergedCount }
+}
+
+export interface CommitActivity {
+  week: number // unix timestamp
+  total: number
+  days: number[] // Sun-Sat
+}
+
+export async function getCommitActivity(owner: string, repo: string): Promise<CommitActivity[]> {
+  const kit = getOctokit()
+  try {
+    const { data } = await kit.repos.getCommitActivityStats({ owner, repo })
+    if (!Array.isArray(data)) return []
+    return data.map((w) => ({ week: w.week, total: w.total, days: w.days }))
+  } catch {
+    return []
+  }
+}
+
+export interface ContributorInfo {
+  login: string
+  avatarUrl: string
+  contributions: number
+}
+
+export async function getTopContributors(owner: string, repo: string, limit = 10): Promise<ContributorInfo[]> {
+  const kit = getOctokit()
+  try {
+    const { data } = await kit.repos.listContributors({ owner, repo, per_page: limit })
+    if (!Array.isArray(data)) return []
+    return data.map((c) => ({
+      login: c.login ?? 'unknown',
+      avatarUrl: c.avatar_url ?? '',
+      contributions: c.contributions
+    }))
+  } catch {
+    return []
+  }
+}
+
+export interface LanguageBreakdown {
+  [language: string]: number // bytes
+}
+
+export async function getLanguages(owner: string, repo: string): Promise<LanguageBreakdown> {
+  const kit = getOctokit()
+  try {
+    const { data } = await kit.repos.listLanguages({ owner, repo })
+    return data as LanguageBreakdown
+  } catch {
+    return {}
+  }
+}
+
 export async function setCommitStatus(
   owner: string,
   repo: string,

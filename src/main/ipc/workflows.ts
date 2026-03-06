@@ -1,5 +1,5 @@
 import { ipcMain } from 'electron'
-import { IPC_CHANNELS, WORKFLOWS_DIR } from '@shared/constants'
+import { IPC_CHANNELS, WORKFLOWS_DIR, GITHUB_WORKFLOWS_DIR, WORKFLOW_DIRS } from '@shared/constants'
 import { db } from '../db'
 import { repos } from '../db/schema'
 import { eq } from 'drizzle-orm'
@@ -35,6 +35,51 @@ function scanDirForSecrets(dir: string, labelPrefix: string, map: Map<string, st
   }
 }
 
+/**
+ * Resolve the active workflows directory for a repo.
+ * Priority: .github/workflows (synced with GitHub) > .orbit/workflows (local)
+ */
+function resolveWorkflowsDir(localPath: string): string | null {
+  for (const dir of WORKFLOW_DIRS) {
+    const full = join(localPath, dir)
+    if (existsSync(full)) return full
+  }
+  return null
+}
+
+/**
+ * Resolve a specific workflow file across both directories.
+ * Handles cases where the file param might include the directory prefix
+ * (e.g. ".github/workflows/ci.yml") or just the filename ("ci.yml").
+ */
+function resolveWorkflowFile(localPath: string, file: string): string | null {
+  // If file already has a directory prefix, try it directly
+  const directPath = join(localPath, file)
+  if (existsSync(directPath)) return directPath
+
+  // Strip any directory prefix to get just the filename
+  const filename = file.replace(/^\.github\/workflows\//, '').replace(/^\.orbit\/workflows\//, '')
+
+  // Search in priority order
+  for (const dir of WORKFLOW_DIRS) {
+    const full = join(localPath, dir, filename)
+    if (existsSync(full)) return full
+  }
+  return null
+}
+
+/**
+ * Get all workflow directories that exist for a repo (for listing all workflows).
+ */
+function getAllWorkflowDirs(localPath: string): Array<{ dir: string; label: string }> {
+  const result: Array<{ dir: string; label: string }> = []
+  const ghDir = join(localPath, GITHUB_WORKFLOWS_DIR)
+  if (existsSync(ghDir)) result.push({ dir: ghDir, label: GITHUB_WORKFLOWS_DIR })
+  const orbitDir = join(localPath, WORKFLOWS_DIR)
+  if (existsSync(orbitDir)) result.push({ dir: orbitDir, label: WORKFLOWS_DIR })
+  return result
+}
+
 let runner: WorkflowRunner | null = null
 
 export function setWorkflowRunner(r: WorkflowRunner): void {
@@ -47,49 +92,60 @@ export function registerWorkflowHandlers(): void {
       const [repo] = await db.select().from(repos).where(eq(repos.id, repoId)).limit(1)
       if (!repo?.localPath) return []
 
-      const workflowsDir = join(repo.localPath, WORKFLOWS_DIR)
-      if (!existsSync(workflowsDir)) return []
+      const dirs = getAllWorkflowDirs(repo.localPath)
+      if (dirs.length === 0) return []
 
-      const files = readdirSync(workflowsDir).filter(
-        (f) => f.endsWith('.yml') || f.endsWith('.yaml')
-      )
+      // Collect workflows from all directories, dedup by filename (.github takes priority)
+      const seen = new Set<string>()
+      const result: WorkflowFile[] = []
 
-      return files.map((file): WorkflowFile => {
-        const content = readFileSync(join(workflowsDir, file), 'utf-8')
-        let wf: Record<string, unknown> = {}
-        try { wf = yaml.load(content) as Record<string, unknown> } catch { /* ignore */ }
+      for (const { dir } of dirs) {
+        const files = readdirSync(dir).filter(
+          (f) => f.endsWith('.yml') || f.endsWith('.yaml')
+        )
 
-        const on = (wf.on ?? {}) as Record<string, unknown>
-        const triggers = Object.keys(on)
-        const jobs = Object.keys((wf.jobs ?? {}) as Record<string, unknown>)
+        for (const file of files) {
+          if (seen.has(file)) continue
+          seen.add(file)
 
-        // Parse workflow_dispatch inputs if present
-        const dispatchDef = on['workflow_dispatch'] as Record<string, unknown> | null | undefined
-        const rawInputs = dispatchDef?.inputs as Record<string, unknown> | undefined
-        const inputs: WorkflowFile['inputs'] = rawInputs
-          ? Object.fromEntries(
-              Object.entries(rawInputs).map(([k, v]) => {
-                const inp = (v ?? {}) as Record<string, unknown>
-                return [k, {
-                  description: inp.description as string | undefined,
-                  required: inp.required as boolean | undefined,
-                  default: inp.default != null ? String(inp.default) : undefined,
-                  type: inp.type as WorkflowInput['type'] | undefined,
-                  options: inp.options as string[] | undefined
-                }]
-              })
-            )
-          : undefined
+          const content = readFileSync(join(dir, file), 'utf-8')
+          let wf: Record<string, unknown> = {}
+          try { wf = yaml.load(content) as Record<string, unknown> } catch { /* ignore */ }
 
-        return {
-          name: (wf.name as string) ?? file,
-          file,
-          path: join(workflowsDir, file),
-          triggers,
-          jobs,
-          inputs
+          const on = (wf.on ?? {}) as Record<string, unknown>
+          const triggers = Object.keys(on)
+          const jobs = Object.keys((wf.jobs ?? {}) as Record<string, unknown>)
+
+          // Parse workflow_dispatch inputs if present
+          const dispatchDef = on['workflow_dispatch'] as Record<string, unknown> | null | undefined
+          const rawInputs = dispatchDef?.inputs as Record<string, unknown> | undefined
+          const inputs: WorkflowFile['inputs'] = rawInputs
+            ? Object.fromEntries(
+                Object.entries(rawInputs).map(([k, v]) => {
+                  const inp = (v ?? {}) as Record<string, unknown>
+                  return [k, {
+                    description: inp.description as string | undefined,
+                    required: inp.required as boolean | undefined,
+                    default: inp.default != null ? String(inp.default) : undefined,
+                    type: inp.type as WorkflowInput['type'] | undefined,
+                    options: inp.options as string[] | undefined
+                  }]
+                })
+              )
+            : undefined
+
+          result.push({
+            name: (wf.name as string) ?? file,
+            file,
+            path: join(dir, file),
+            triggers,
+            jobs,
+            inputs
+          })
         }
-      })
+      }
+
+      return result
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       throw new Error(`Erro ao listar workflows: ${msg}`)
@@ -100,8 +156,9 @@ export function registerWorkflowHandlers(): void {
     try {
       const [repo] = await db.select().from(repos).where(eq(repos.id, repoId)).limit(1)
       if (!repo?.localPath) throw new Error('Repositório sem pasta local vinculada.')
-      const filePath = join(repo.localPath, WORKFLOWS_DIR, file)
-      if (!existsSync(filePath)) throw new Error(`Arquivo de workflow "${file}" não encontrado.`)
+
+      const filePath = resolveWorkflowFile(repo.localPath, file)
+      if (!filePath) throw new Error(`Arquivo de workflow "${file}" não encontrado em .github/workflows/ nem .orbit/workflows/.`)
       return readFileSync(filePath, 'utf-8')
     } catch (err) {
       if (err instanceof Error && (err.message.includes('não encontrad') || err.message.includes('sem pasta'))) throw err

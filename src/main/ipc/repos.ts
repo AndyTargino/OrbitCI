@@ -1,5 +1,5 @@
 import { ipcMain, dialog, shell } from 'electron'
-import { IPC_CHANNELS, WORKFLOWS_DIR } from '@shared/constants'
+import { IPC_CHANNELS, WORKFLOWS_DIR, GITHUB_WORKFLOWS_DIR } from '@shared/constants'
 import { db } from '../db'
 import { repos } from '../db/schema'
 import { eq } from 'drizzle-orm'
@@ -11,8 +11,6 @@ import { existsSync, mkdirSync, readdirSync, copyFileSync, rmSync, readFileSync 
 import { join } from 'path'
 import { homedir } from 'os'
 import type { Repo } from '@shared/types'
-
-const GITHUB_WORKFLOWS_DIR = '.github/workflows'
 
 function rowToRepo(row: typeof repos.$inferSelect): Repo {
   return {

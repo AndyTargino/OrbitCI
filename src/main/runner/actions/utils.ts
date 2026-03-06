@@ -8,14 +8,14 @@ export const utilActions: Record<string, ActionHandler> = {
     const title = w?.title ?? 'OrbitCI'
     const body = w?.body ?? ''
     showNotification({ title, body })
-    log(`✓ Notificação enviada: ${title}`)
+    log(`[OK] Notificacao enviada: ${title}`)
   },
 
   'env/set': async ({ with: w, env, log }) => {
     if (!w) return
     for (const [key, val] of Object.entries(w)) {
       env[key] = String(val)
-      log(`✓ env.${key} definido`)
+      log(`[OK] env.${key} definido`)
     }
   },
 
@@ -33,7 +33,7 @@ export const utilActions: Record<string, ActionHandler> = {
       data: body
     })
 
-    log(`✓ ${method.toUpperCase()} ${url} → ${response.status}`)
+    log(`[OK] ${method.toUpperCase()} ${url} -> ${response.status}`)
     setOutput('status', String(response.status))
     setOutput('body', JSON.stringify(response.data))
     return { status: String(response.status), body: JSON.stringify(response.data) }
@@ -55,7 +55,7 @@ export const utilActions: Record<string, ActionHandler> = {
     const cmd = `docker build -t ${tag} -f ${file} ${context}`
     const output = execSync(cmd, { cwd: workspace, encoding: 'utf-8' })
     log(output)
-    log(`✓ Docker image built: ${tag}`)
+    log(`[OK] Docker image built: ${tag}`)
   },
 
   'docker/push': async ({ with: w, workspace, log }) => {
@@ -64,6 +64,6 @@ export const utilActions: Record<string, ActionHandler> = {
     const registry = w?.registry
     const fullImage = registry ? `${registry}/${image}` : image
     execSync(`docker push ${fullImage}`, { cwd: workspace, encoding: 'utf-8' })
-    log(`✓ Docker image pushed: ${fullImage}`)
+    log(`[OK] Docker image pushed: ${fullImage}`)
   }
 }

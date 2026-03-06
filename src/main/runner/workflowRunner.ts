@@ -7,13 +7,13 @@ import { db } from '../db'
 import { runs, runLogs, repos, settings } from '../db/schema'
 import { eq, and, inArray } from 'drizzle-orm'
 import { runJob } from './jobRunner'
-import { evaluateExpression, type ExpressionContext } from './expressionEngine'
+import { evaluateExpression, evaluateCondition, type ExpressionContext } from './expressionEngine'
 import { resolveSecrets } from '../services/secretService'
 import { ProcessMonitor } from '../services/processMonitor'
 import { sendRunLog, sendToRenderer, notifyRunComplete, notifyRunStart } from '../services/notifyService'
 import { getCurrentSha, getCurrentBranch, checkout as gitCheckout } from '../git/gitEngine'
 import { getStoredToken } from '../services/githubService'
-import { IPC_CHANNELS, WORKFLOWS_DIR, DEFAULT_MAX_CONCURRENT } from '@shared/constants'
+import { IPC_CHANNELS, WORKFLOW_DIRS, DEFAULT_MAX_CONCURRENT } from '@shared/constants'
 import type { WorkflowDefinition, JobDefinition, RunStatus } from '@shared/types'
 
 export interface TriggerEvent {
@@ -77,18 +77,33 @@ export class WorkflowRunner {
       return
     }
 
-    const workflowsDir = join(repoRow.localPath, WORKFLOWS_DIR)
-    if (!existsSync(workflowsDir)) {
-      console.log(`[WorkflowRunner] triggerEvent: workflows dir not found: ${workflowsDir}`)
+    // Scan both directories (.github/workflows first, then .orbit/workflows)
+    // Dedup by filename so .github/workflows takes priority
+    const seen = new Set<string>()
+    const allFiles: Array<{ file: string; fullPath: string }> = []
+
+    for (const dir of WORKFLOW_DIRS) {
+      const workflowsDir = join(repoRow.localPath, dir)
+      if (!existsSync(workflowsDir)) continue
+
+      const files = readdirSync(workflowsDir).filter((f) => f.endsWith('.yml') || f.endsWith('.yaml'))
+      for (const file of files) {
+        if (seen.has(file)) continue
+        seen.add(file)
+        allFiles.push({ file, fullPath: join(workflowsDir, file) })
+      }
+    }
+
+    if (allFiles.length === 0) {
+      console.log(`[WorkflowRunner] triggerEvent: no workflow files found in any directory`)
       return
     }
 
-    const files = readdirSync(workflowsDir).filter((f) => f.endsWith('.yml') || f.endsWith('.yaml'))
-    console.log(`[WorkflowRunner] triggerEvent: found ${files.length} workflow files: ${files.join(', ')}`)
+    console.log(`[WorkflowRunner] triggerEvent: found ${allFiles.length} workflow files: ${allFiles.map(f => f.file).join(', ')}`)
 
     let matched = 0
-    for (const file of files) {
-      const wf = this.parseWorkflow(join(workflowsDir, file))
+    for (const { file, fullPath } of allFiles) {
+      const wf = this.parseWorkflow(fullPath)
       if (!wf) {
         console.log(`[WorkflowRunner] triggerEvent: could not parse ${file}`)
         continue
@@ -102,7 +117,7 @@ export class WorkflowRunner {
         this.queueRun(repoId, file, eventName, event).catch(console.error)
       }
     }
-    console.log(`[WorkflowRunner] triggerEvent: ${matched}/${files.length} workflows matched event '${eventName}'`)
+    console.log(`[WorkflowRunner] triggerEvent: ${matched}/${allFiles.length} workflows matched event '${eventName}'`)
   }
 
   async queueRun(
@@ -114,7 +129,9 @@ export class WorkflowRunner {
     const [repoRow] = await db.select().from(repos).where(eq(repos.id, repoId)).limit(1)
     if (!repoRow?.localPath) throw new Error('Repo not found or no local path')
 
-    const workflowPath = join(repoRow.localPath, WORKFLOWS_DIR, workflowFile)
+    // Resolve workflow file from both directories (.github/workflows first)
+    const workflowPath = this.resolveWorkflowFile(repoRow.localPath, workflowFile)
+    if (!workflowPath) throw new Error(`Workflow not found: ${workflowFile}`)
     const wf = this.parseWorkflow(workflowPath)
     if (!wf) throw new Error(`Cannot parse workflow: ${workflowFile}`)
 
@@ -263,16 +280,25 @@ export class WorkflowRunner {
     const branch = event.branch ?? 'main'
 
     // Create GitHub Actions file-protocol temp files for this run
+    // These files live on the HOST but are mounted into containers at /runner_tmp
     const runTmpDir = mkdtempSync(join(tmpdir(), 'orbitci-'))
-    const githubOutputFile = join(runTmpDir, 'github_output')
-    const githubEnvFile = join(runTmpDir, 'github_env')
-    const githubSummaryFile = join(runTmpDir, 'github_step_summary')
-    const githubPathFile = join(runTmpDir, 'github_path')
-    const githubStateFile = join(runTmpDir, 'github_state')
-    for (const f of [githubOutputFile, githubEnvFile, githubSummaryFile, githubPathFile, githubStateFile]) {
+    const hostOutputFile = join(runTmpDir, 'github_output')
+    const hostEnvFile = join(runTmpDir, 'github_env')
+    const hostSummaryFile = join(runTmpDir, 'github_step_summary')
+    const hostPathFile = join(runTmpDir, 'github_path')
+    const hostStateFile = join(runTmpDir, 'github_state')
+    for (const f of [hostOutputFile, hostEnvFile, hostSummaryFile, hostPathFile, hostStateFile]) {
       writeFileSync(f, '')
     }
     try { mkdirSync(join(runTmpDir, 'tool_cache'), { recursive: true }) } catch { /* ignore */ }
+
+    // Container-internal paths (mounted via Docker bind at /runner_tmp)
+    const containerTmpDir = '/runner_tmp'
+    const githubOutputFile = `${containerTmpDir}/github_output`
+    const githubEnvFile = `${containerTmpDir}/github_env`
+    const githubSummaryFile = `${containerTmpDir}/github_step_summary`
+    const githubPathFile = `${containerTmpDir}/github_path`
+    const githubStateFile = `${containerTmpDir}/github_state`
 
     // Base context — auto-inject GITHUB_TOKEN from auth if not in secrets
     const secrets = resolveSecrets([repoId])
@@ -301,7 +327,7 @@ export class WorkflowRunner {
       GITHUB_ACTOR: owner,
       GITHUB_TRIGGERING_ACTOR: owner,
       GITHUB_EVENT_NAME: trigger,
-      GITHUB_WORKSPACE: workspace,
+      GITHUB_WORKSPACE: '/workspace',
       GITHUB_SERVER_URL: 'https://github.com',
       GITHUB_API_URL: 'https://api.github.com',
       GITHUB_GRAPHQL_URL: 'https://api.github.com/graphql',
@@ -317,13 +343,20 @@ export class WorkflowRunner {
       GITHUB_STATE: githubStateFile,
       // Runner variables
       RUNNER_NAME: 'OrbitCI',
-      RUNNER_OS: process.platform === 'win32' ? 'Windows' : process.platform === 'darwin' ? 'macOS' : 'Linux',
-      RUNNER_ARCH: process.arch === 'x64' ? 'X64' : process.arch === 'arm64' ? 'ARM64' : process.arch,
-      RUNNER_TEMP: runTmpDir,
-      RUNNER_TOOL_CACHE: join(runTmpDir, 'tool_cache'),
+      RUNNER_OS: 'Linux',  // Default — overridden per-job in jobRunner based on runs-on target
+      RUNNER_ARCH: 'X64',  // Default Docker arch
+
+      RUNNER_TEMP: containerTmpDir,
+      RUNNER_TOOL_CACHE: `${containerTmpDir}/tool_cache`,
       // OrbitCI identifiers
       ORBIT_RUN_ID: runId,
       ORBIT_TIMESTAMP: startedAt,
+      // Inject secrets as env vars (GitHub Actions convention)
+      ...Object.fromEntries(
+        Object.entries(secrets).map(([k, v]) => [`SECRET_${k}`, v])
+      ),
+      // GITHUB_TOKEN gets its own env var (standard GitHub Actions behavior)
+      ...(secrets['GITHUB_TOKEN'] ? { GITHUB_TOKEN: secrets['GITHUB_TOKEN'] } : {}),
       ...resolveEnvDefs(wf.env, {})
     }
 
@@ -362,7 +395,9 @@ export class WorkflowRunner {
       needs: {}
     }
 
-    const jobNames = Object.keys(wf.jobs)
+    // ── Expand matrix strategies into individual jobs ────────────────────────
+    const expandedJobs = expandMatrixJobs(wf.jobs)
+    const jobNames = Object.keys(expandedJobs)
     const jobResults: Record<string, 'success' | 'failure' | 'cancelled' | 'skipped'> = {}
     const jobOutputs: Record<string, Record<string, string>> = {}
     let finalStatus: RunStatus = 'success'
@@ -370,17 +405,24 @@ export class WorkflowRunner {
     // Create process monitor for resource tracking
     const monitor = new ProcessMonitor()
 
+    // Container reuse pool: jobs with the same image can share a container within this run
+    const containerPool = new Map<string, string>() // image -> containerId
+
     try {
-      // Process jobs respecting `needs:` dependencies
+      // ── Parallel job execution respecting DAG dependencies ────────────────
       const completed = new Set<string>()
-      const maxIterations = jobNames.length * 2
+      const running = new Map<string, Promise<void>>()
 
-      for (let iter = 0; iter < maxIterations && completed.size < jobNames.length; iter++) {
+      const launchReadyJobs = async (): Promise<void> => {
+        if (cancelFlags.get(runId)) {
+          finalStatus = 'cancelled'
+          return
+        }
+
         for (const jobName of jobNames) {
-          if (completed.has(jobName)) continue
-          if (cancelFlags.get(runId)) { finalStatus = 'cancelled'; break }
+          if (completed.has(jobName) || running.has(jobName)) continue
 
-          const job = wf.jobs[jobName]
+          const job = expandedJobs[jobName]
           const needs = Array.isArray(job.needs)
             ? job.needs
             : job.needs
@@ -388,27 +430,9 @@ export class WorkflowRunner {
             : []
 
           const allDepsComplete = needs.every((dep) => completed.has(dep))
-          const anyDepFailed = needs.some((dep) => jobResults[dep] === 'failure')
-
           if (!allDepsComplete) continue
-          if (anyDepFailed) {
-            completed.add(jobName)
-            jobResults[jobName] = 'failure'
-            jobOutputs[jobName] = {}
-            await log(`⏭ Job '${jobName}' ignorado (dependência falhou)`, 'skip')
-            continue
-          }
 
-          // Skip jobs whose runs-on doesn't match the current platform
-          if (job['runs-on'] && !platformMatches(job['runs-on'])) {
-            completed.add(jobName)
-            jobResults[jobName] = 'skipped'
-            jobOutputs[jobName] = {}
-            await log(`⏭ Job '${jobName}' ignorado (runs-on: ${job['runs-on']} ≠ ${currentPlatformLabel()})`, 'skip')
-            continue
-          }
-
-          // Build needs context so dependent jobs can access ${{ needs.<job>.outputs.<key> }}
+          // Build needs context (always, even if no deps — needed for expression evaluation)
           const needsCtx: Record<string, { outputs: Record<string, string>; result: string }> = {}
           for (const dep of needs) {
             needsCtx[dep] = {
@@ -420,36 +444,118 @@ export class WorkflowRunner {
           const jobCtx: ExpressionContext = {
             ...ctx,
             needs: needsCtx,
-            steps: {} // Reset steps per job
+            steps: {}
           }
 
-          const result = await runJob({
-            runId,
-            repoId,
-            jobName,
-            job,
-            workspace,
-            baseEnv,
-            baseCtx: jobCtx,
-            cancelCheck: () => cancelFlags.get(runId) ?? false,
-            monitor
-          })
+          if ((job as ExpandedJob).matrixValues) {
+            // Resolve expressions in matrix values (e.g. ${{ needs.*.outputs.* }})
+            // These couldn't be resolved at expansion time because needs wasn't available yet
+            const rawMatrix = (job as ExpandedJob).matrixValues!
+            const resolvedMatrix: Record<string, unknown> = {}
+            for (const [k, v] of Object.entries(rawMatrix)) {
+              resolvedMatrix[k] = typeof v === 'string'
+                ? evaluateExpression(v, jobCtx)
+                : v
+            }
+            jobCtx.matrix = resolvedMatrix
+          }
 
-          completed.add(jobName)
-          jobResults[jobName] = result.status
-          jobOutputs[jobName] = result.outputs
-          if (result.status === 'failure') finalStatus = 'failure'
-          if (result.status === 'cancelled') finalStatus = 'cancelled'
+          // ── Evaluate job-level `if:` condition (like GitHub Actions / nektos/act / Gitea) ──
+          // GitHub Actions behavior:
+          //   - Default `if:` is `success()` when no condition is specified
+          //   - `success()` returns true only if ALL needs deps have result == 'success'
+          //   - `skipped` deps cause `success()` to return false (cascade skip)
+          //   - Evaluated BEFORE container creation, with access to `needs.*` but NOT `steps.*`
+          const effectiveIf = job.if ?? 'success()'
+          const conditionResult = evaluateCondition(effectiveIf, jobCtx)
+          if (!conditionResult) {
+            completed.add(jobName)
+            // Match GitHub Actions: skipped when condition is false
+            // Use 'skipped' so downstream jobs also cascade correctly
+            const depFailed = needs.some((dep) => jobResults[dep] === 'failure')
+            jobResults[jobName] = depFailed ? 'failure' : 'skipped'
+            jobOutputs[jobName] = {}
+            console.log(`[OrbitCI] [${runId.replace(/-/g, '').slice(0, 8)}/${jobName}] [SKIP] Skipped (condition: ${effectiveIf})`)
+            await log(`[SKIP] Job '${jobName}' skipped (condition: ${effectiveIf})`, 'skip')
+            // Re-check if other jobs can now launch
+            await launchReadyJobs()
+            return
+          }
+
+          // Launch job as a parallel promise
+          const jobPromise = (async () => {
+            const result = await runJob({
+              runId,
+              repoId,
+              jobName,
+              job,
+              workspace,
+              runTmpDir,
+              baseEnv,
+              baseCtx: jobCtx,
+              cancelCheck: () => cancelFlags.get(runId) ?? false,
+              monitor,
+              containerPool
+            })
+
+            running.delete(jobName)
+            completed.add(jobName)
+            jobResults[jobName] = result.status
+            jobOutputs[jobName] = result.outputs
+
+            if (result.status === 'failure') {
+              finalStatus = 'failure'
+              // fail-fast: cancel sibling matrix jobs
+              const expandedJob = job as ExpandedJob
+              if (expandedJob.matrixParent) {
+                const parentJob = wf.jobs[expandedJob.matrixParent]
+                const failFast = parentJob?.strategy?.['fail-fast'] !== false
+                if (failFast) {
+                  for (const [sibName, sibJob] of Object.entries(expandedJobs)) {
+                    if (!completed.has(sibName) && !running.has(sibName) && (sibJob as ExpandedJob).matrixParent === expandedJob.matrixParent) {
+                      completed.add(sibName)
+                      jobResults[sibName] = 'cancelled'
+                      jobOutputs[sibName] = {}
+                      await log(`[SKIP] Job '${sibName}' cancelled (fail-fast)`, 'skip')
+                    }
+                  }
+                }
+              }
+            }
+            if (result.status === 'cancelled') finalStatus = 'cancelled'
+
+            // After a job completes, try to launch more ready jobs
+            await launchReadyJobs()
+          })()
+
+          running.set(jobName, jobPromise)
         }
+      }
 
-        if (finalStatus !== 'success') break
+      // Initial launch
+      await launchReadyJobs()
+
+      // Wait for all running jobs to finish
+      while (running.size > 0) {
+        await Promise.race([...running.values()])
+        if (finalStatus !== 'success') {
+          // Wait for already-running jobs to finish before breaking
+          if (running.size > 0) await Promise.allSettled([...running.values()])
+          break
+        }
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       finalStatus = 'failure'
-      await log(`❌ Erro fatal: ${msg}`, 'error')
+      await log(`[FAIL] Fatal error: ${msg}`, 'error')
     } finally {
       monitor.dispose()
+      // Clean up any reusable containers from the pool
+      const { stopAndRemoveContainer } = await import('../services/dockerService')
+      for (const [image, cId] of containerPool) {
+        try { await stopAndRemoveContainer(cId) } catch { /* ignore */ }
+      }
+      containerPool.clear()
     }
 
     const finishedAt = new Date().toISOString()
@@ -487,6 +593,8 @@ export class WorkflowRunner {
       peakGpuMemBytes: peakGpuMem
     }).where(eq(runs.id, runId))
 
+    const runShort = runId.replace(/-/g, '').slice(0, 8)
+    console.log(`[WorkflowRunner] [${runShort}] Workflow finished: ${finalStatus} (${durationMs}ms) | Jobs: ${Object.entries(jobResults).map(([j, r]) => `${j}=${r}`).join(', ')}`)
     sendToRenderer(IPC_CHANNELS.EVENT_RUN_STATUS, { runId, status: finalStatus })
     if (finalStatus !== 'cancelled') {
       notifyRunComplete(runId, wf.name ?? workflowFile(runId), finalStatus as 'success' | 'failure', repoId)
@@ -508,6 +616,25 @@ export class WorkflowRunner {
 
     // Clean up temp files created for this run
     try { rmSync(runTmpDir, { recursive: true, force: true }) } catch { /* ignore */ }
+  }
+
+  /**
+   * Resolve a workflow file across both directories (.github/workflows first).
+   * Handles filenames with or without directory prefixes.
+   */
+  resolveWorkflowFile(localPath: string, file: string): string | null {
+    // If file already has a directory prefix, try it directly
+    const directPath = join(localPath, file)
+    if (existsSync(directPath)) return directPath
+
+    // Strip any directory prefix to get just the filename
+    const filename = file.replace(/^\.github\/workflows\//, '').replace(/^\.orbit\/workflows\//, '')
+
+    for (const dir of WORKFLOW_DIRS) {
+      const full = join(localPath, dir, filename)
+      if (existsSync(full)) return full
+    }
+    return null
   }
 
   parseWorkflow(filePath: string): WorkflowDefinition | null {
@@ -574,18 +701,131 @@ function workflowFile(runId: string): string {
   return `run-${runId.slice(0, 8)}`
 }
 
-/** Check if a `runs-on` value matches the current OS */
-function platformMatches(runsOn: string): boolean {
-  const label = runsOn.toLowerCase()
-  const plat = process.platform
-  if (plat === 'win32') return label.includes('windows')
-  if (plat === 'darwin') return label.includes('macos') || label.includes('mac')
-  // linux
-  return label.includes('ubuntu') || label.includes('linux')
+// ── Matrix strategy expansion ─────────────────────────────────────────────────
+
+interface ExpandedJob extends JobDefinition {
+  matrixValues?: Record<string, unknown>
+  matrixParent?: string
 }
 
-function currentPlatformLabel(): string {
-  if (process.platform === 'win32') return 'Windows'
-  if (process.platform === 'darwin') return 'macOS'
-  return 'Linux'
+/**
+ * Expand jobs with `strategy.matrix` into multiple concrete jobs.
+ *
+ * Example: a job "build" with matrix { os: [ubuntu, windows], node: [18, 20] }
+ * becomes: "build (ubuntu, 18)", "build (ubuntu, 20)", "build (windows, 18)", "build (windows, 20)"
+ *
+ * Supports:
+ * - Regular matrix keys (cartesian product)
+ * - `include` (additional combinations)
+ * - `exclude` (removed combinations)
+ */
+function expandMatrixJobs(
+  jobs: Record<string, JobDefinition>
+): Record<string, ExpandedJob> {
+  const result: Record<string, ExpandedJob> = {}
+
+  for (const [jobName, job] of Object.entries(jobs)) {
+    if (!job.strategy?.matrix) {
+      result[jobName] = job
+      continue
+    }
+
+    const matrix = job.strategy.matrix
+    const combos = generateMatrixCombinations(matrix)
+
+    if (combos.length === 0) {
+      result[jobName] = job
+      continue
+    }
+
+    for (const combo of combos) {
+      // Build display label: "build (ubuntu-latest, 20)"
+      const values = Object.values(combo).map(String)
+      const label = `${jobName} (${values.join(', ')})`
+
+      // Clone job definition with matrix values interpolated into runs-on
+      const expandedJob: ExpandedJob = {
+        ...job,
+        name: label,
+        matrixValues: combo,
+        matrixParent: jobName,
+        // Interpolate matrix values in runs-on
+        'runs-on': interpolateMatrix(job['runs-on'] ?? '', combo),
+      }
+
+      // Map needs from original job names (so all matrix variants depend on same needs)
+      result[label] = expandedJob
+    }
+  }
+
+  return result
+}
+
+/**
+ * Generate all matrix combinations from a matrix definition.
+ * Handles cartesian product of regular keys, plus include/exclude.
+ */
+function generateMatrixCombinations(
+  matrix: Record<string, unknown[]> & {
+    include?: Record<string, unknown>[]
+    exclude?: Record<string, unknown>[]
+  }
+): Record<string, unknown>[] {
+  // Extract regular keys (not include/exclude)
+  const regularKeys = Object.keys(matrix).filter(
+    (k) => k !== 'include' && k !== 'exclude'
+  )
+
+  // Generate cartesian product (start empty if no regular keys — include-only matrix)
+  let combos: Record<string, unknown>[] = regularKeys.length > 0 ? [{}] : []
+  for (const key of regularKeys) {
+    const values = Array.isArray(matrix[key]) ? matrix[key] : [matrix[key]]
+    const newCombos: Record<string, unknown>[] = []
+    for (const combo of combos) {
+      for (const val of values) {
+        newCombos.push({ ...combo, [key]: val })
+      }
+    }
+    combos = newCombos
+  }
+
+  // Apply excludes
+  if (matrix.exclude) {
+    combos = combos.filter((combo) =>
+      !matrix.exclude!.some((exc) =>
+        Object.entries(exc).every(([k, v]) => String(combo[k]) === String(v))
+      )
+    )
+  }
+
+  // Apply includes (add additional combinations)
+  if (matrix.include) {
+    for (const inc of matrix.include) {
+      // Check if this include matches an existing combo (merge) or is new (add)
+      let merged = false
+      for (const combo of combos) {
+        const matches = Object.entries(inc).every(
+          ([k, v]) => regularKeys.includes(k) && String(combo[k]) === String(v)
+        )
+        if (matches) {
+          Object.assign(combo, inc)
+          merged = true
+        }
+      }
+      if (!merged) {
+        combos.push({ ...inc })
+      }
+    }
+  }
+
+  return combos
+}
+
+/**
+ * Interpolate ${{ matrix.* }} expressions in a string.
+ */
+function interpolateMatrix(str: string, values: Record<string, unknown>): string {
+  return str.replace(/\$\{\{\s*matrix\.(\w+)\s*\}\}/g, (_, key) => {
+    return values[key] !== undefined ? String(values[key]) : `\${{ matrix.${key} }}`
+  })
 }

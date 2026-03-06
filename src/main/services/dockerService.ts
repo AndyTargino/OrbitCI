@@ -12,6 +12,63 @@ function getDocker(): Dockerode {
   return docker
 }
 
+// Fun container name suffixes — bilingual puns
+const ORBIT_NAMES_EN = [
+  'launchpad', 'starship', 'booster', 'payload', 'liftoff', 'mission-control',
+  'thruster', 'capsule', 'nebula', 'comet', 'meteor', 'asteroid', 'pulsar',
+  'quasar', 'nova', 'orbiter', 'voyager', 'explorer', 'pioneer', 'horizon',
+  'eclipse', 'aurora', 'cosmos', 'gravity', 'ignition', 'warp-drive'
+]
+const ORBIT_NAMES_PT = [
+  'foguete', 'lancamento', 'missao', 'nave', 'estrela', 'cometa',
+  'meteoro', 'nebulosa', 'pulsar', 'viajante', 'explorador', 'horizonte',
+  'eclipse', 'aurora', 'cosmos', 'ignicao', 'propulsor', 'capsula',
+  'asteroide', 'galaxia', 'constelacao', 'turbo', 'relampago', 'trovao'
+]
+
+function getOrbitName(): string {
+  // Detect locale from env
+  const lang = (process.env.LANG ?? process.env.LC_ALL ?? 'en').toLowerCase()
+  const names = lang.startsWith('pt') ? ORBIT_NAMES_PT : ORBIT_NAMES_EN
+  return names[Math.floor(Math.random() * names.length)]
+}
+
+/**
+ * Generate a Docker-safe container name for OrbitCI.
+ * Format: orbitci-{imageType}-{funName}-{jobName}-{runIdShort}
+ * Example: orbitci-ubuntu-launchpad-build-7bef98e1
+ */
+function generateContainerName(runId: string, jobName: string, image: string): string {
+  const funName = getOrbitName()
+  // Extract image type: "ubuntu:22.04" -> "ubuntu", "node:20-alpine" -> "node"
+  const imageType = image.split(':')[0].split('/').pop()?.toLowerCase().replace(/[^a-z0-9]/g, '') ?? 'linux'
+  const sanitizedJob = jobName.replace(/[^a-zA-Z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '').toLowerCase().slice(0, 20)
+  const runShort = runId.replace(/-/g, '').slice(0, 8)
+  return `orbitci-${imageType}-${funName}-${sanitizedJob}-${runShort}`
+}
+
+const LOG_PREFIX = '[OrbitCI Docker]'
+
+/**
+ * Strip ANSI escape sequences and terminal control codes from Docker TTY output.
+ * Must handle all escape sequences to produce clean text for the UI.
+ */
+function stripAnsi(str: string): string {
+  return str
+    // Handle \r overwrite: "abc\rdef" → "def" (keep text after last \r per line)
+    .replace(/^.*\r(?!\n)/gm, '')
+    // CSI sequences: \x1b[ ... (params) ... (final byte) — covers colors, cursor, erase
+    .replace(/\x1b\[[\x20-\x3f]*[\x40-\x7e]/g, '')
+    // OSC sequences: \x1b] ... (terminated by BEL \x07 or ST \x1b\\)
+    .replace(/\x1b\][\s\S]*?(?:\x07|\x1b\\)/g, '')
+    // DCS/PM/APC sequences: \x1bP, \x1b^, \x1b_ ... ST
+    .replace(/\x1b[P^_][\s\S]*?\x1b\\/g, '')
+    // Two-char escape sequences: \x1b followed by any single char
+    .replace(/\x1b./g, '')
+    // Stray control characters (NUL, BEL, BS, VT, FF, SO-SUB, FS-US, DEL)
+    .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, '')
+}
+
 export async function getDockerStatus(): Promise<DockerStatus> {
   try {
     const d = getDocker()
@@ -74,91 +131,326 @@ export async function pullImage(imageName: string): Promise<void> {
 export async function createWorkflowContainer(opts: {
   image: string
   repoPath: string
+  runTmpDir?: string
   env: Record<string, string>
   runId: string
   jobName: string
+  isWindows?: boolean
 }): Promise<string> {
   const d = getDocker()
-  const envArr = Object.entries(opts.env).map(([k, v]) => `${k}=${v}`)
+  // Default env vars matching GitHub Actions runner behavior
+  const defaultEnv: Record<string, string> = {
+    DEBIAN_FRONTEND: 'noninteractive',
+    PIP_BREAK_SYSTEM_PACKAGES: '1',
+  }
+  const mergedEnv = { ...defaultEnv, ...opts.env }
+  const envArr = Object.entries(mergedEnv).map(([k, v]) => `${k}=${v}`)
+
+  // Normalize paths for Docker bind mount (Windows paths need forward slashes)
+  const repoPath = opts.repoPath.replace(/\\/g, '/')
+
+  const keepAliveCmd = ['/bin/sh', '-c', 'sleep infinity']
+
+  // ── Shadow Workspace strategy (like GitHub Actions) ──────────────────
+  // Mount the host repo as READ-ONLY at /orbit/source
+  // Use a Docker VOLUME for /workspace (native ext4 in WSL2 = fast I/O)
+  // On bootstrap, we do `git clone --shared /orbit/source /workspace`
+  // This gives us:
+  //   - Isolation: build artifacts in /workspace don't affect the host repo
+  //   - Performance: Docker volumes are 10-50x faster than bind mounts on Windows
+  //   - Ephemerality: each job starts with a clean workspace (like GitHub Actions)
+  const binds = [
+    `${repoPath}:/orbit/source:ro`  // Host repo as read-only source
+  ]
+  if (opts.runTmpDir) {
+    const tmpPath = opts.runTmpDir.replace(/\\/g, '/')
+    binds.push(`${tmpPath}:/runner_tmp:rw`)
+  }
+
+  // Named Docker volumes for persistent caches between runs
+  binds.push(
+    'orbitci-npm-cache:/root/.npm',
+    'orbitci-yarn-cache:/usr/local/share/.cache/yarn',
+    'orbitci-pip-cache:/root/.cache/pip',
+    'orbitci-go-cache:/root/go/pkg/mod',
+    'orbitci-nuget-cache:/root/.nuget/packages',
+    // NOTE: apt volumes (var/cache/apt, var/lib/apt) intentionally NOT shared.
+    // Sharing /var/lib/apt across parallel containers causes dpkg lock conflicts (exit code 100).
+    // The bootstrapped image already has essential packages pre-installed.
+    // NVM cache — persists Node.js versions across runs without touching system dirs
+    'orbitci-nvm:/root/.nvm'
+  )
+
+  const containerName = generateContainerName(opts.runId, opts.jobName, opts.image)
+  console.log(`${LOG_PREFIX} Creating container "${containerName}" | image=${opts.image} | job=${opts.jobName}`)
+
+  // Remove existing container with same name (from previous failed runs)
+  try {
+    const existing = d.getContainer(containerName)
+    await existing.remove({ force: true })
+    console.log(`${LOG_PREFIX} Removed stale container with same name: ${containerName}`)
+  } catch { /* does not exist, ok */ }
+
+  // Generate a per-job workspace volume name for isolation
+  const runShort = opts.runId.replace(/-/g, '').slice(0, 8)
+  const sanitizedJob = opts.jobName.replace(/[^a-zA-Z0-9]/g, '-').replace(/-+/g, '-').toLowerCase().slice(0, 20)
+  const workspaceVolName = `orbitci-ws-${sanitizedJob}-${runShort}`
 
   const container = await d.createContainer({
+    name: containerName,
     Image: opts.image,
     WorkingDir: '/workspace',
     Env: envArr,
     Labels: {
       'orbitci.run_id': opts.runId,
-      'orbitci.job': opts.jobName
+      'orbitci.job': opts.jobName,
+      'orbitci.name': containerName,
+      'orbitci.workspace_vol': workspaceVolName
     },
     HostConfig: {
-      Binds: [`${opts.repoPath}:/workspace:rw`],
+      Binds: binds,
+      Mounts: [
+        {
+          Target: '/workspace',
+          Source: workspaceVolName,
+          Type: 'volume' as const,
+          ReadOnly: false
+        }
+      ],
       AutoRemove: false
     },
-    Cmd: ['/bin/sh', '-c', 'tail -f /dev/null'], // keep alive
-    Tty: false
+    Cmd: keepAliveCmd,
+    Tty: true,      // TTY mode: simpler stream handling, no mux headers
+    OpenStdin: false
   })
 
   await container.start()
+  console.log(`${LOG_PREFIX} Container started: ${containerName} (${container.id.slice(0, 12)}) | workspace volume: ${workspaceVolName}`)
   return container.id
 }
 
 export async function execInContainer(
   containerId: string,
   command: string,
-  workingDir?: string
+  workingDir?: string,
+  isWindows?: boolean,
+  shell?: string,
+  onOutput?: (line: string) => void
 ): Promise<{ exitCode: number; output: string }> {
   const d = getDocker()
   const container = d.getContainer(containerId)
 
-  const exec = await container.exec({
-    Cmd: ['/bin/sh', '-c', command],
+  // Verify container is running before exec
+  try {
+    const info = await container.inspect()
+    if (!info.State.Running) {
+      console.error(`${LOG_PREFIX} Container ${containerId.slice(0, 12)} is NOT running (State: ${info.State.Status}). Attempting restart...`)
+      await container.start()
+      console.log(`${LOG_PREFIX} Container restarted successfully.`)
+    }
+  } catch (inspectErr) {
+    console.error(`${LOG_PREFIX} Failed to inspect container ${containerId.slice(0, 12)}:`, inspectErr)
+  }
+
+  // Resolve shell command based on explicit shell or defaults
+  let cmd: string[]
+  if (shell) {
+    switch (shell) {
+      case 'bash':
+        cmd = ['bash', '--noprofile', '--norc', '-eo', 'pipefail', '-c', command]
+        break
+      case 'sh':
+        cmd = ['/bin/sh', '-e', '-c', command]
+        break
+      case 'pwsh':
+      case 'powershell':
+        cmd = ['pwsh', '-command', command]
+        break
+      case 'python':
+        cmd = ['python3', '-c', command]
+        break
+      case 'cmd':
+        cmd = ['cmd', '/c', command]
+        break
+      default:
+        cmd = ['/bin/sh', '-c', command]
+        break
+    }
+  } else {
+    cmd = ['/bin/sh', '-e', '-c', command]
+  }
+
+  const execObj = await container.exec({
+    Cmd: cmd,
+    Env: ['DEBIAN_FRONTEND=noninteractive', 'PIP_BREAK_SYSTEM_PACKAGES=1'],
     WorkingDir: workingDir ?? '/workspace',
     AttachStdout: true,
-    AttachStderr: true
+    AttachStderr: true,
+    Tty: true  // Match container Tty setting — raw stream, no mux headers
   })
 
   return new Promise((resolve, reject) => {
-    exec.start({ hijack: true, stdin: false }, (err, stream) => {
+    execObj.start({ hijack: true, stdin: false }, (err: Error | null, stream: NodeJS.ReadableStream | undefined) => {
       if (err) return reject(err)
       if (!stream) return reject(new Error('No stream from exec'))
 
       let output = ''
-      const chunks: Buffer[] = []
+      let lineBuffer = ''
+      let escCarry = ''  // Carry incomplete escape sequences across chunks
 
+      // With Tty:true, stream is raw (no Docker mux headers). Read directly.
       stream.on('data', (chunk: Buffer) => {
-        chunks.push(chunk)
-        // Docker multiplexes stdout/stderr — strip 8-byte header
-        if (chunk.length > 8) {
-          const content = chunk.slice(8).toString('utf-8')
-          output += content
+        let text = escCarry + chunk.toString('utf-8')
+        escCarry = ''
+
+        // If text ends with \x1b or an incomplete CSI sequence, carry to next chunk
+        // This prevents escape codes split across chunks from leaking single chars
+        const lastEsc = text.lastIndexOf('\x1b')
+        if (lastEsc !== -1 && lastEsc >= text.length - 8) {
+          // Check if the escape sequence after lastEsc is complete
+          const tail = text.slice(lastEsc)
+          const isComplete = /^\x1b(?:\[[\x20-\x3f]*[\x40-\x7e]|[^[])/.test(tail)
+          if (!isComplete) {
+            escCarry = tail
+            text = text.slice(0, lastEsc)
+          }
+        }
+
+        output += text
+
+        // Stream lines in real-time via callback
+        if (onOutput) {
+          lineBuffer += text
+          const lines = lineBuffer.split('\n')
+          // Keep the last incomplete line in the buffer
+          lineBuffer = lines.pop() ?? ''
+          for (const line of lines) {
+            const cleaned = stripAnsi(line).trim()
+            if (cleaned) onOutput(cleaned)
+          }
         }
       })
 
       stream.on('end', async () => {
+        // Process any carried escape sequence
+        if (escCarry) {
+          output += escCarry
+          if (onOutput) lineBuffer += escCarry
+        }
+
+        // Flush remaining line buffer
+        if (onOutput && lineBuffer.trim()) {
+          const cleaned = stripAnsi(lineBuffer).trim()
+          if (cleaned) onOutput(cleaned)
+        }
+
         try {
-          const inspectData = await exec.inspect()
-          resolve({ exitCode: inspectData.ExitCode ?? 0, output: output.trim() })
+          const inspectData = await execObj.inspect()
+          const exitCode = inspectData.ExitCode ?? 0
+          if (exitCode !== 0) {
+            const cleanOutput = stripAnsi(output).trim()
+            const lastLines = cleanOutput.split('\n').slice(-15).join('\n')
+            console.log(`${LOG_PREFIX} Exec exit code ${exitCode} | cmd: ${cmd.slice(-1)[0]?.slice(0, 80)}...`)
+            console.log(`${LOG_PREFIX} Last 15 lines of output:\n${lastLines}`)
+          }
+          resolve({ exitCode, output: stripAnsi(output).trim() })
         } catch {
-          resolve({ exitCode: 0, output: output.trim() })
+          resolve({ exitCode: 0, output: stripAnsi(output).trim() })
         }
       })
 
-      stream.on('error', reject)
+      stream.on('error', (streamErr: Error) => {
+        console.error(`${LOG_PREFIX} Exec stream error:`, streamErr.message)
+        reject(streamErr)
+      })
     })
   })
+}
+
+export async function createServiceContainer(opts: {
+  image: string
+  env: Record<string, string>
+  ports?: string[]
+  runId: string
+  jobName: string
+  serviceName: string
+}): Promise<string> {
+  const d = getDocker()
+  const envArr = Object.entries(opts.env).map(([k, v]) => `${k}=${v}`)
+
+  // Parse port bindings
+  const portBindings: Record<string, Array<{ HostPort: string }>> = {}
+  if (opts.ports) {
+    for (const port of opts.ports) {
+      const parts = port.split(':')
+      if (parts.length === 2) {
+        portBindings[`${parts[1]}/tcp`] = [{ HostPort: parts[0] }]
+      } else {
+        portBindings[`${parts[0]}/tcp`] = [{ HostPort: parts[0] }]
+      }
+    }
+  }
+
+  const imageType = opts.image.split(':')[0].split('/').pop()?.toLowerCase().replace(/[^a-z0-9]/g, '') ?? 'svc'
+  const svcSanitized = opts.serviceName.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase().slice(0, 20)
+  const runShort = opts.runId.replace(/-/g, '').slice(0, 8)
+  const containerName = `orbitci-${imageType}-svc-${svcSanitized}-${runShort}`
+
+  console.log(`${LOG_PREFIX} Creating service container "${containerName}" | image=${opts.image}`)
+
+  // Remove stale container with same name
+  try {
+    const existing = d.getContainer(containerName)
+    await existing.remove({ force: true })
+  } catch { /* ok */ }
+
+  const container = await d.createContainer({
+    name: containerName,
+    Image: opts.image,
+    Env: envArr,
+    Labels: {
+      'orbitci.run_id': opts.runId,
+      'orbitci.job': opts.jobName,
+      'orbitci.service': opts.serviceName
+    },
+    HostConfig: {
+      PortBindings: portBindings,
+      AutoRemove: false
+    },
+    Tty: false
+  })
+
+  await container.start()
+  console.log(`${LOG_PREFIX} Service "${opts.serviceName}" started: ${containerName} (${container.id.slice(0, 12)})`)
+  return container.id
 }
 
 export async function stopAndRemoveContainer(containerId: string): Promise<void> {
   try {
     const d = getDocker()
     const container = d.getContainer(containerId)
+    const info = await container.inspect().catch(() => null)
+    const name = info?.Name?.replace(/^\//, '') ?? containerId.slice(0, 12)
+    const wsVol = info?.Config?.Labels?.['orbitci.workspace_vol'] ?? null
+    console.log(`${LOG_PREFIX} Stopping container: ${name}`)
     try {
       await container.stop({ t: 5 })
     } catch {
       // already stopped
     }
     await container.remove({ force: true })
+    console.log(`${LOG_PREFIX} Removed container: ${name}`)
+
+    // Clean up the ephemeral workspace volume
+    if (wsVol) {
+      try {
+        const vol = d.getVolume(wsVol)
+        await vol.remove({ force: true })
+        console.log(`${LOG_PREFIX} Removed workspace volume: ${wsVol}`)
+      } catch { /* volume may not exist or be in use */ }
+    }
   } catch (err) {
-    console.warn('[Docker] Failed to remove container:', containerId, err)
+    console.warn(`${LOG_PREFIX} Failed to remove container ${containerId.slice(0, 12)}:`, err)
   }
 }
 
@@ -170,10 +462,98 @@ export async function ensureImageAvailable(image: string): Promise<void> {
   try {
     const d = getDocker()
     await d.getImage(image).inspect()
+    console.log(`${LOG_PREFIX} Image ready (cached): ${image}`)
   } catch {
-    // image not found locally, pull it
+    console.log(`${LOG_PREFIX} Pulling image: ${image} ...`)
     await pullImage(image)
+    console.log(`${LOG_PREFIX} Image pulled: ${image}`)
   }
+}
+
+/**
+ * Get or build a pre-bootstrapped OrbitCI image for faster container startup.
+ *
+ * Instead of running apt-get install on every container, we build a local image
+ * `orbitci/<base>:bootstrapped` with git, curl, ca-certificates, build-essential
+ * already installed. This saves ~30-60s per container.
+ *
+ * The image is built once and cached locally. Subsequent runs reuse it.
+ */
+// Bump this version to force rebuild of all bootstrapped images
+const BOOTSTRAP_VERSION = '4'
+
+export async function getBootstrappedImage(baseImage: string): Promise<string> {
+  const d = getDocker()
+  const tag = `orbitci/${baseImage.replace(/[:/]/g, '-')}:bootstrapped`
+
+  // Check if we already have it AND it's the current version
+  try {
+    const imgInfo = await d.getImage(tag).inspect()
+    const imgVersion = imgInfo.Config?.Labels?.['orbitci.bootstrap_version'] ?? '0'
+    if (imgVersion === BOOTSTRAP_VERSION) {
+      console.log(`${LOG_PREFIX} Bootstrapped image ready: ${tag} (v${BOOTSTRAP_VERSION})`)
+      return tag
+    }
+    // Outdated version — remove and rebuild
+    console.log(`${LOG_PREFIX} Bootstrapped image outdated (v${imgVersion} -> v${BOOTSTRAP_VERSION}), rebuilding...`)
+    try { await d.getImage(tag).remove({ force: true }) } catch { /* may be in use */ }
+  } catch {
+    // Need to build it
+  }
+
+  console.log(`${LOG_PREFIX} Building bootstrapped image: ${tag} (one-time, ~30s)...`)
+
+  // Ensure base image exists
+  await ensureImageAvailable(baseImage)
+
+  // Create a temp container, install tools, commit as new image
+  const container = await d.createContainer({
+    Image: baseImage,
+    Cmd: ['/bin/sh', '-c', `
+      export DEBIAN_FRONTEND=noninteractive
+      # Detect package manager and install essentials (matching GitHub Actions runner tools)
+      if command -v apt-get >/dev/null 2>&1; then
+        apt-get update -qq && apt-get install -y -qq \
+          git curl ca-certificates build-essential sudo python3 python3-pip jq zip unzip \
+          libarchive-tools rpm fakeroot dpkg \
+          libgtk-3-0 libnotify4 libnss3 libxss1 libasound2 libgbm1 xvfb \
+          >/dev/null 2>&1
+      elif command -v apk >/dev/null 2>&1; then
+        apk add --no-cache git curl ca-certificates build-base sudo python3 py3-pip jq zip unzip >/dev/null 2>&1
+      elif command -v yum >/dev/null 2>&1; then
+        yum install -y git curl ca-certificates make gcc gcc-c++ sudo python3 python3-pip jq zip unzip rpm-build >/dev/null 2>&1
+      elif command -v dnf >/dev/null 2>&1; then
+        dnf install -y git curl ca-certificates make gcc gcc-c++ sudo python3 python3-pip jq zip unzip rpm-build >/dev/null 2>&1
+      fi
+      # Upgrade pip to support --break-system-packages flag (PEP 668)
+      python3 -m pip install --upgrade pip >/dev/null 2>&1 || true
+      # Set PIP_BREAK_SYSTEM_PACKAGES so pip works like GitHub Actions runners
+      echo 'export PIP_BREAK_SYSTEM_PACKAGES=1' >> /etc/profile
+      echo 'PIP_BREAK_SYSTEM_PACKAGES=1' >> /etc/environment
+      # Mark as bootstrapped
+      echo "orbitci-bootstrapped" > /etc/orbitci-bootstrap-marker
+    `],
+    Tty: true
+  })
+
+  await container.start()
+  // Wait for it to finish
+  await container.wait()
+
+  // Commit the container as a new image with version label
+  await container.commit({
+    repo: tag.split(':')[0],
+    tag: tag.split(':')[1],
+    comment: `OrbitCI bootstrapped image v${BOOTSTRAP_VERSION}`,
+    author: 'OrbitCI',
+    changes: [`LABEL orbitci.bootstrap_version="${BOOTSTRAP_VERSION}"`]
+  })
+
+  // Remove the temp container
+  await container.remove({ force: true })
+
+  console.log(`${LOG_PREFIX} Bootstrapped image built: ${tag}`)
+  return tag
 }
 
 // ─── Cleanup orphaned containers left from crashed runs ───────────────────────

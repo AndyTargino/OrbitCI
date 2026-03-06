@@ -1,8 +1,18 @@
 export const APP_NAME = 'OrbitCI'
 export const ORBIT_DIR = '.orbit'
 export const WORKFLOWS_DIR = `${ORBIT_DIR}/workflows`
+export const GITHUB_WORKFLOWS_DIR = '.github/workflows'
 export const ARTIFACTS_DIR = `${ORBIT_DIR}/artifacts`
 export const RELEASES_DIR = `${ORBIT_DIR}/releases`
+
+/**
+ * Workflow directory resolution order:
+ * 1. `.github/workflows/` — primary (synced with GitHub)
+ * 2. `.orbit/workflows/`  — manual/local override
+ *
+ * The runner and UI always prefer `.github/workflows/` if it exists.
+ */
+export const WORKFLOW_DIRS = [GITHUB_WORKFLOWS_DIR, WORKFLOWS_DIR] as const
 
 export const MIN_POLL_INTERVAL = 30 // seconds
 export const DEFAULT_POLL_INTERVAL = 60 // seconds
@@ -47,6 +57,11 @@ export const IPC_CHANNELS = {
   GITHUB_RUNS_LIST: 'github:runsList',
   GITHUB_RUN_JOBS: 'github:runJobs',
   GITHUB_JOB_LOGS: 'github:jobLogs',
+  GITHUB_REPO_STATS: 'github:repoStats',
+  GITHUB_PR_COUNTS: 'github:prCounts',
+  GITHUB_COMMIT_ACTIVITY: 'github:commitActivity',
+  GITHUB_CONTRIBUTORS: 'github:contributors',
+  GITHUB_LANGUAGES: 'github:languages',
   SHELL_OPEN_EXTERNAL: 'shell:openExternal',
 
   // Runs

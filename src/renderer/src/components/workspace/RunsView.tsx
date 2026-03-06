@@ -29,7 +29,6 @@ import {
   GitBranch,
   Github,
   Loader2,
-  RefreshCw,
   Square,
   Terminal,
   Workflow,
@@ -37,6 +36,7 @@ import {
 } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { PipelineGraph, type GraphJob } from '@/components/shared/PipelineGraph'
 
 // ─── Props ──────────────────────────────────────────────────────────────────────
 
@@ -113,15 +113,6 @@ function logLineClass(type: RunLog['type']): string {
 
 // ─── Pipeline Graph ─────────────────────────────────────────────────────────────
 
-interface GraphJob {
-  id: string
-  name: string
-  runsOn: string
-  needs: string[]     // job IDs (not names)
-  status: string
-  durationMs: number | null
-}
-
 /** Parse a workflow YAML into graphJobs, overlaying runtime status+duration */
 function parseWorkflowToGraph(
   yaml: string,
@@ -150,11 +141,11 @@ function ghJobsToGraphJobs(jobs: GitHubJob[], workflowYaml?: string): GraphJob[]
   // Build a map job-name → job-id (as string) for needs resolution
   const nameToId = new Map(jobs.map((j) => [j.name, String(j.id)]))
 
-  // Try to extract needs from YAML (match by job name or job key)
-  // needsByKey: YAML job key → needs (as YAML job keys)
-  // needsByDisplayName: display name → needs (as YAML job keys)
+  // YAML key → needs (as YAML keys), and YAML key → display name
   const needsByKey: Record<string, string[]> = {}
   const needsByDisplayName: Record<string, string[]> = {}
+  const yamlKeys: string[] = []
+  const matrixKeys = new Set<string>()
   if (workflowYaml) {
     try {
       const doc = jsYaml.load(workflowYaml) as Record<string, unknown>
@@ -164,12 +155,47 @@ function ghJobsToGraphJobs(jobs: GitHubJob[], workflowYaml?: string): GraphJob[]
           ? jobDef.needs.map(String)
           : jobDef.needs ? [String(jobDef.needs)] : []
         needsByKey[key] = rawNeeds
+        yamlKeys.push(key)
         const displayName = (jobDef.name as string) ?? ''
         if (displayName && displayName !== key) {
           needsByDisplayName[displayName] = rawNeeds
         }
+        // Detect matrix jobs
+        if (jobDef.strategy && typeof jobDef.strategy === 'object' && (jobDef.strategy as Record<string, unknown>).matrix) {
+          matrixKeys.add(key)
+        }
       }
     } catch { /* ignore */ }
+  }
+
+  // Match API job name to YAML key.
+  // GitHub API names matrix jobs as "key (matrix-val1, matrix-val2, ...)"
+  // so we need fuzzy matching: exact, then startsWith "key ("
+  function findYamlKeyForJob(apiName: string): string | null {
+    // Exact match
+    if (needsByKey[apiName] !== undefined) return apiName
+    // Display name match
+    if (needsByDisplayName[apiName] !== undefined) return null // handled separately
+    // Matrix: API name starts with "yamlKey (" — e.g. "build-and-release (windows-latest, ...)"
+    for (const key of yamlKeys) {
+      if (apiName === key || apiName.startsWith(key + ' (')) return key
+    }
+    // Normalized match (ignore case, hyphens, underscores)
+    const norm = apiName.replace(/[-_\s]/g, '').toLowerCase()
+    for (const key of yamlKeys) {
+      if (norm === key.replace(/[-_\s]/g, '').toLowerCase()) return key
+    }
+    return null
+  }
+
+  // Match a YAML needKey to an API job. The API job might be "needKey" or "needKey (matrix...)"
+  function findApiJobForNeedKey(needKey: string): GitHubJob | undefined {
+    return jobs.find((j) =>
+      j.name === needKey ||
+      j.name.startsWith(needKey + ' (') ||
+      j.name.toLowerCase() === needKey.toLowerCase() ||
+      j.name.replace(/[-_\s]/g, '') === needKey.replace(/[-_\s]/g, '')
+    )
   }
 
   return jobs.map((job) => {
@@ -183,19 +209,12 @@ function ghJobsToGraphJobs(jobs: GitHubJob[], workflowYaml?: string): GraphJob[]
       durationMs = Date.now() - new Date(job.startedAt).getTime()
     }
 
-    // Resolve needs: YAML stores job keys, API uses display names (or key when no name)
-    // Look up needs by API job name first (matches YAML key when no explicit name),
-    // then by display name
-    const rawNeeds = needsByKey[job.name] ?? needsByDisplayName[job.name] ?? []
+    // Resolve needs: find YAML key for this API job, then resolve its dependencies
+    const yamlKey = findYamlKeyForJob(job.name)
+    const rawNeeds = (yamlKey ? needsByKey[yamlKey] : null) ?? needsByDisplayName[job.name] ?? []
     const resolvedNeeds = rawNeeds
       .map((needKey) => {
-        // needKey is a YAML job key; match against API job names
-        // When no explicit name field, API uses the YAML key as job name
-        const matched = jobs.find((j) =>
-          j.name === needKey ||
-          j.name.toLowerCase() === needKey.toLowerCase() ||
-          j.name.replace(/[-_\s]/g, '') === needKey.replace(/[-_\s]/g, '')
-        )
+        const matched = findApiJobForNeedKey(needKey)
         return matched ? String(matched.id) : nameToId.get(needKey) ?? null
       })
       .filter((id): id is string => id !== null)
@@ -207,139 +226,12 @@ function ghJobsToGraphJobs(jobs: GitHubJob[], workflowYaml?: string): GraphJob[]
       needs: resolvedNeeds,
       status,
       durationMs,
+      matrixGroupKey: yamlKey && matrixKeys.has(yamlKey) ? yamlKey : undefined,
     }
   })
 }
 
-function getNodeStyle(status: string): { bg: string; border: string } {
-  switch (status) {
-    case 'success':
-    case 'completed': return { bg: 'rgba(74,222,128,0.09)', border: 'rgba(74,222,128,0.45)' }
-    case 'failure': return { bg: 'rgba(248,113,113,0.09)', border: 'rgba(248,113,113,0.45)' }
-    case 'running':
-    case 'in_progress': return { bg: 'rgba(96,165,250,0.09)', border: 'rgba(96,165,250,0.45)' }
-    case 'queued':
-    case 'waiting': return { bg: 'rgba(251,191,36,0.09)', border: 'rgba(251,191,36,0.35)' }
-    case 'cancelled': return { bg: 'rgba(107,114,128,0.09)', border: 'rgba(107,114,128,0.35)' }
-    default: return { bg: 'rgba(255,255,255,0.03)', border: 'rgba(255,255,255,0.12)' }
-  }
-}
-
-const PIPELINE_NODE_W = 185
-const PIPELINE_NODE_H = 56
-const PIPELINE_GAP_X = 60
-const PIPELINE_GAP_Y = 12
-
-function fmtDuration(ms: number | null): string {
-  if (ms === null || ms <= 0) return ''
-  const totalSec = Math.floor(ms / 1000)
-  const m = Math.floor(totalSec / 60)
-  const s = totalSec % 60
-  if (m > 0) return `${m}m ${s}s`
-  return `${s}s`
-}
-
-function RunPipelineGraph({ graphJobs }: { graphJobs: GraphJob[] }): JSX.Element {
-  if (graphJobs.length === 0) return <></>
-
-  // Topological sort into column-levels
-  const levels: GraphJob[][] = []
-  const placed = new Set<string>()
-  let remaining = [...graphJobs]
-  while (remaining.length > 0) {
-    const level = remaining.filter((j) => j.needs.length === 0 || j.needs.every((n) => placed.has(n)))
-    if (level.length === 0) { levels.push(remaining); break }
-    levels.push(level)
-    level.forEach((j) => placed.add(j.id))
-    remaining = remaining.filter((j) => !placed.has(j.id))
-  }
-
-  const LEVEL_W = PIPELINE_NODE_W + PIPELINE_GAP_X
-  const jobPos = new Map<string, { x: number; y: number }>()
-  let maxRows = 0
-  levels.forEach((level, li) => {
-    if (level.length > maxRows) maxRows = level.length
-    level.forEach((job, ji) => {
-      jobPos.set(job.id, { x: li * LEVEL_W, y: ji * (PIPELINE_NODE_H + PIPELINE_GAP_Y) })
-    })
-  })
-
-  const totalW = levels.length * LEVEL_W - PIPELINE_GAP_X
-  const totalH = maxRows * (PIPELINE_NODE_H + PIPELINE_GAP_Y) - PIPELINE_GAP_Y
-
-  const connectors: { x1: number; y1: number; x2: number; y2: number }[] = []
-  for (const job of graphJobs) {
-    const to = jobPos.get(job.id)
-    if (!to) continue
-    for (const need of job.needs) {
-      const from = jobPos.get(need)
-      if (!from) continue
-      connectors.push({
-        x1: from.x + PIPELINE_NODE_W,
-        y1: from.y + PIPELINE_NODE_H / 2,
-        x2: to.x,
-        y2: to.y + PIPELINE_NODE_H / 2,
-      })
-    }
-  }
-
-  return (
-    <div className="overflow-x-auto px-4 py-3">
-      <div className="relative" style={{ width: totalW, height: totalH, minWidth: totalW }}>
-        <svg
-          className="absolute inset-0 pointer-events-none"
-          width={totalW}
-          height={totalH}
-          style={{ overflow: 'visible' }}
-        >
-          {connectors.map((c, i) => {
-            const midX = (c.x1 + c.x2) / 2
-            return (
-              <path
-                key={i}
-                d={`M ${c.x1} ${c.y1} C ${midX} ${c.y1}, ${midX} ${c.y2}, ${c.x2} ${c.y2}`}
-                fill="none"
-                stroke="rgba(255,255,255,0.18)"
-                strokeWidth="1.5"
-              />
-            )
-          })}
-        </svg>
-
-        {graphJobs.map((job) => {
-          const pos = jobPos.get(job.id)
-          if (!pos) return null
-          const ns = getNodeStyle(job.status)
-          return (
-            <div
-              key={job.id}
-              className="absolute flex items-center gap-2.5 px-3 rounded-lg border cursor-default select-none"
-              style={{
-                left: pos.x,
-                top: pos.y,
-                width: PIPELINE_NODE_W,
-                height: PIPELINE_NODE_H,
-                background: ns.bg,
-                borderColor: ns.border,
-              }}
-            >
-              <StatusIcon status={job.status} className="w-4 h-4 shrink-0" />
-              <div className="min-w-0 flex-1">
-                <p className="text-[12px] font-semibold truncate leading-tight">{job.name}</p>
-                <p className="text-[10px] text-muted-foreground/60 truncate leading-tight mt-0.5">{job.runsOn}</p>
-              </div>
-              {fmtDuration(job.durationMs) && (
-                <span className="text-[10px] text-muted-foreground/50 shrink-0 tabular-nums ml-1">
-                  {fmtDuration(job.durationMs)}
-                </span>
-              )}
-            </div>
-          )
-        })}
-      </div>
-    </div>
-  )
-}
+// (Pipeline graph component moved to @/components/shared/PipelineGraph)
 
 type ViewMode = 'orbit' | 'github'
 
@@ -370,6 +262,7 @@ export function RunsView({ repoId }: Props): JSX.Element {
   // GitHub Actions state
   const [ghRuns, setGhRuns] = useState<GitHubRun[]>([])
   const [ghLoading, setGhLoading] = useState(false)
+  const [ghStatusFilter, setGhStatusFilter] = useState<string>('all')
   const [selectedGhRun, setSelectedGhRun] = useState<GitHubRun | null>(null)
   const [ghJobs, setGhJobs] = useState<GitHubJob[]>([])
   const [ghJobLogs, setGhJobLogs] = useState<Record<number, string>>({})
@@ -377,7 +270,9 @@ export function RunsView({ repoId }: Props): JSX.Element {
   const [ghPage, setGhPage] = useState(1)
   const [ghHasMore, setGhHasMore] = useState(true)
   const [ghLoadingMore, setGhLoadingMore] = useState(false)
-  const [ghLastRefresh, setGhLastRefresh] = useState<Date | null>(null)
+  const ghRunsRef = useRef<GitHubRun[]>([])
+  const selectedGhRunRef = useRef<GitHubRun | null>(null)
+  useEffect(() => { selectedGhRunRef.current = selectedGhRun }, [selectedGhRun])
 
   // Pipeline graph state
   const [pipelineOpen, setPipelineOpen] = useState(true)
@@ -415,27 +310,44 @@ export function RunsView({ repoId }: Props): JSX.Element {
 
   // ── Fetch GitHub runs ──────────────────────────────────────────────────────
 
-  const fetchGhRuns = useCallback(async (page = 1, append = false) => {
-    if (!append) setGhLoading(true)
+  const fetchGhRuns = useCallback(async (page = 1, append = false, silent = false) => {
+    if (!silent && !append) setGhLoading(true)
     try {
       const result = await electron.runs.listGitHub(repoId, RUNS_PAGE_SIZE, page)
       if (append) {
         setGhRuns((prev) => [...prev, ...result])
+        ghRunsRef.current = [...ghRunsRef.current, ...result]
+      } else if (silent) {
+        // Only update if something changed (status, conclusion, or new/removed runs)
+        const prev = ghRunsRef.current
+        const changed = result.length !== prev.length ||
+          result.some((r, i) => !prev[i] || r.id !== prev[i].id || r.status !== prev[i].status || r.conclusion !== prev[i].conclusion)
+        if (changed) {
+          setGhRuns(result)
+          ghRunsRef.current = result
+          // Update selected run if it changed
+          const sel = selectedGhRunRef.current
+          if (sel) {
+            const updated = result.find((r) => r.id === sel.id)
+            if (updated && (updated.status !== sel.status || updated.conclusion !== sel.conclusion)) {
+              setSelectedGhRun(updated)
+            }
+          }
+        }
       } else {
         setGhRuns(result)
+        ghRunsRef.current = result
       }
       setGhHasMore(result.length >= RUNS_PAGE_SIZE)
     } catch { /* ignore */ }
-    if (!append) setGhLoading(false)
+    if (!silent && !append) setGhLoading(false)
   }, [repoId])
 
   useEffect(() => {
-    if (viewMode === 'github') {
-      setGhPage(1)
-      setGhHasMore(true)
-      fetchGhRuns(1, false)
-    }
-  }, [viewMode, fetchGhRuns])
+    setGhPage(1)
+    setGhHasMore(true)
+    fetchGhRuns(1, false)
+  }, [fetchGhRuns])
 
   const handleLoadMoreGh = async () => {
     const nextPage = ghPage + 1
@@ -507,14 +419,17 @@ export function RunsView({ repoId }: Props): JSX.Element {
       if (log.runId === selectedRunId) setLogs((prev) => [...prev, log])
     })
     const unsubStatus = electron.on(IPC_CHANNELS.EVENT_RUN_STATUS, (data: unknown) => {
-      const evt = data as { runId: string; status: RunStatus }
+      const evt = data as { runId: string; status: RunStatus; stepName?: string; stepStatus?: RunStatus; jobName?: string }
       setRuns((prev) => prev.map((r) => (r.id === evt.runId ? { ...r, status: evt.status } : r)))
       if (evt.runId === selectedRunId) {
         setSelectedRun((prev) => (prev ? { ...prev, status: evt.status } : prev))
+        // Refresh jobs and steps on EVERY status event (not just final)
+        // so the UI updates in real-time as steps go running → success/failure
+        electron.runs.getJobs(evt.runId).then(setJobs).catch(() => { })
+        electron.runs.getSteps(evt.runId).then(setSteps).catch(() => { })
+        // On final status, also refresh the full run record (duration, etc.)
         if (['success', 'failure', 'cancelled'].includes(evt.status)) {
           electron.runs.get(evt.runId).then((run) => setSelectedRun(run)).catch(() => { })
-          electron.runs.getJobs(evt.runId).then(setJobs).catch(() => { })
-          electron.runs.getSteps(evt.runId).then(setSteps).catch(() => { })
         }
       }
       fetchRuns(0)
@@ -574,16 +489,16 @@ export function RunsView({ repoId }: Props): JSX.Element {
     return () => { cancelled = true }
   }, [selectedGhRun?.workflowPath, repoId])
 
-  // ── GitHub Actions auto-refresh (list every 15s, jobs every 10s) ────────
+  // ── GitHub Actions silent background refresh ────────────────────────────
 
   useEffect(() => {
-    if (viewMode !== 'github') return
     const timer = setInterval(() => {
-      fetchGhRuns(1, false).then(() => setGhLastRefresh(new Date())).catch(() => { })
+      fetchGhRuns(1, false, true)
     }, 15_000)
     return () => clearInterval(timer)
-  }, [viewMode, fetchGhRuns])
+  }, [fetchGhRuns])
 
+  // Faster polling for selected in-progress run (jobs refresh)
   useEffect(() => {
     if (!selectedGhRun) return
     const currentStatus = selectedGhRun.status === 'completed'
@@ -593,14 +508,7 @@ export function RunsView({ repoId }: Props): JSX.Element {
 
     const timer = setInterval(async () => {
       try {
-        const [updatedRuns, updatedJobs] = await Promise.all([
-          electron.runs.listGitHub(repoId, RUNS_PAGE_SIZE, 1),
-          electron.runs.listGitHubRunJobs(repoId, selectedGhRun.id)
-        ])
-        setGhRuns(updatedRuns)
-        setGhLastRefresh(new Date())
-        const updated = updatedRuns.find((r) => r.id === selectedGhRun.id)
-        if (updated) setSelectedGhRun(updated)
+        const updatedJobs = await electron.runs.listGitHubRunJobs(repoId, selectedGhRun.id)
         setGhJobs(updatedJobs)
       } catch { /* ignore */ }
     }, 10_000)
@@ -662,6 +570,13 @@ export function RunsView({ repoId }: Props): JSX.Element {
     return run.status
   }
 
+  const filteredGhRuns = ghStatusFilter === 'all'
+    ? ghRuns
+    : ghRuns.filter((r) => {
+        const s = ghStatusToLocal(r)
+        return s === ghStatusFilter
+      })
+
   return (
     <TooltipProvider delayDuration={400}>
       <>
@@ -708,28 +623,18 @@ export function RunsView({ repoId }: Props): JSX.Element {
                 </SelectContent>
               </Select>
             ) : (
-              <div className="flex flex-col gap-1.5">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="w-full h-7 text-[12px] gap-1.5"
-                  disabled={ghLoading}
-                  onClick={() => fetchGhRuns(1, false).then(() => setGhLastRefresh(new Date())).catch(() => { })}
-                >
-                  {ghLoading ? (
-                    <Loader2 className="h-3 w-3 animate-spin" />
-                  ) : (
-                    <RefreshCw className="h-3 w-3" />
-                  )}
-                  {t('common.refresh_now', 'Refresh now')}
-                </Button>
-                {ghLastRefresh && (
-                  <p className="text-[10px] text-muted-foreground text-center flex items-center justify-center gap-1">
-                    <span className="inline-block w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
-                    {t('workspace.runs.auto_refresh', 'Auto-refresh')} · {formatRelativeTime(ghLastRefresh.toISOString())}
-                  </p>
-                )}
-              </div>
+              <Select value={ghStatusFilter} onValueChange={setGhStatusFilter}>
+                <SelectTrigger className="h-7 text-[12px]">
+                  <SelectValue placeholder={t('workspace.runs.filter_placeholder', 'Filter by status')} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">{t('workspace.status.all', 'All')}</SelectItem>
+                  <SelectItem value="success">{t('workspace.status.success', 'Success')}</SelectItem>
+                  <SelectItem value="failure">{t('workspace.status.failure', 'Failure')}</SelectItem>
+                  <SelectItem value="in_progress">{t('workspace.status.running', 'Running')}</SelectItem>
+                  <SelectItem value="cancelled">{t('workspace.status.cancelled', 'Cancelled')}</SelectItem>
+                </SelectContent>
+              </Select>
             )}
           </div>
 
@@ -762,7 +667,7 @@ export function RunsView({ repoId }: Props): JSX.Element {
                             <div className="flex items-start gap-2 min-w-0">
                               <StatusIcon status={run.status} className="w-4 h-4 mt-0.5 shrink-0" />
                               <div className="min-w-0 flex-1">
-                                <p className="text-[13px] font-medium truncate">
+                                <p className="text-[13px] font-medium leading-snug line-clamp-2 break-words">
                                   {run.workflowName || run.workflowFile}
                                 </p>
                                 <div className="flex items-center gap-2 mt-0.5">
@@ -817,7 +722,7 @@ export function RunsView({ repoId }: Props): JSX.Element {
                   <Loader2 className="h-4 w-4 animate-spin mr-2" />
                   <span className="text-[13px]">{t('common.loading', 'Loading...')}</span>
                 </div>
-              ) : ghRuns.length === 0 ? (
+              ) : filteredGhRuns.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-12 px-4 text-center">
                   <div className="w-12 h-12 rounded-full bg-muted/50 flex items-center justify-center mb-3">
                     <Github className="w-6 h-6 text-muted-foreground/50" />
@@ -830,7 +735,7 @@ export function RunsView({ repoId }: Props): JSX.Element {
               ) : (
                 <>
                   <div className="divide-y divide-border">
-                    {ghRuns.map((run) => (
+                    {filteredGhRuns.map((run) => (
                       <Tooltip key={run.id}>
                         <TooltipTrigger asChild>
                           <button
@@ -843,7 +748,7 @@ export function RunsView({ repoId }: Props): JSX.Element {
                             <div className="flex items-start gap-2 min-w-0">
                               <StatusIcon status={ghStatusToLocal(run)} className="w-4 h-4 mt-0.5 shrink-0" />
                               <div className="min-w-0 flex-1">
-                                <p className="text-[13px] font-medium truncate">
+                                <p className="text-[13px] font-medium leading-snug line-clamp-2 break-words">
                                   {run.displayTitle || run.name || 'Workflow'}
                                 </p>
                                 <div className="flex items-center gap-2 mt-0.5">
@@ -871,7 +776,7 @@ export function RunsView({ repoId }: Props): JSX.Element {
                       </Tooltip>
                     ))}
                   </div>
-                  {ghHasMore && ghRuns.length > 0 && (
+                  {ghHasMore && filteredGhRuns.length > 0 && (
                     <div className="p-2">
                       <Button
                         variant="ghost"
@@ -969,10 +874,10 @@ export function RunsView({ repoId }: Props): JSX.Element {
                       : jobs.map((j) => ({ id: j.id, name: j.jobName, runsOn: 'local', needs: [], status: j.status, durationMs: j.durationMs ?? null }))
                     if (graphJobs.length === 0) return null
                     return (
-                      <div className="border border-border rounded-md overflow-hidden mb-2">
+                      <div className="mb-2">
                         <button
                           onClick={() => setPipelineOpen((p) => !p)}
-                          className="w-full flex items-center gap-2 px-3 py-2 hover:bg-accent/40 transition-colors text-left"
+                          className="w-full flex items-center gap-2 px-1 py-1.5 hover:bg-accent/40 transition-colors text-left rounded"
                         >
                           {pipelineOpen
                             ? <ChevronDown className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
@@ -980,7 +885,13 @@ export function RunsView({ repoId }: Props): JSX.Element {
                           <Workflow className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
                           <span className="text-[12px] font-medium text-muted-foreground">{t('workspace.runs.pipeline_label', 'Pipeline')}</span>
                         </button>
-                        {pipelineOpen && <RunPipelineGraph graphJobs={graphJobs} />}
+                        {pipelineOpen && (
+                          <PipelineGraph
+                            graphJobs={graphJobs}
+                            workflowName={selectedRun.workflowFile}
+                            event={selectedRun.trigger ?? undefined}
+                          />
+                        )}
                       </div>
                     )
                   })()}
@@ -1117,11 +1028,12 @@ export function RunsView({ repoId }: Props): JSX.Element {
                   {/* Pipeline graph for GitHub run */}
                   {ghJobs.length > 0 && (() => {
                     const graphJobs = ghJobsToGraphJobs(ghJobs, ghWorkflowYaml)
+                    const wfFilename = selectedGhRun.workflowPath.split('/').pop() ?? selectedGhRun.workflowPath
                     return (
-                      <div className="border border-border rounded-md overflow-hidden mb-2">
+                      <div className="mb-2">
                         <button
                           onClick={() => setPipelineOpen((p) => !p)}
-                          className="w-full flex items-center gap-2 px-3 py-2 hover:bg-accent/40 transition-colors text-left"
+                          className="w-full flex items-center gap-2 px-1 py-1.5 hover:bg-accent/40 transition-colors text-left rounded"
                         >
                           {pipelineOpen
                             ? <ChevronDown className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
@@ -1135,7 +1047,13 @@ export function RunsView({ repoId }: Props): JSX.Element {
                             </span>
                           )}
                         </button>
-                        {pipelineOpen && <RunPipelineGraph graphJobs={graphJobs} />}
+                        {pipelineOpen && (
+                          <PipelineGraph
+                            graphJobs={graphJobs}
+                            workflowName={wfFilename}
+                            event={selectedGhRun.event}
+                          />
+                        )}
                       </div>
                     )
                   })()}
@@ -1163,7 +1081,7 @@ export function RunsView({ repoId }: Props): JSX.Element {
                           <StatusIcon status={jobStatus} className="w-4 h-4 shrink-0" />
                           <span className="text-[13px] font-medium truncate">{job.name}</span>
                           {jobDurationMs !== null && (
-                            <span className="ml-auto text-[11px] text-muted-foreground shrink-0">{fmtDuration(jobDurationMs)}</span>
+                            <span className="ml-auto text-[11px] text-muted-foreground shrink-0">{formatDuration(jobDurationMs)}</span>
                           )}
                         </button>
 
@@ -1180,7 +1098,7 @@ export function RunsView({ repoId }: Props): JSX.Element {
                                   <StatusIcon status={stepStatus} className="w-3.5 h-3.5 shrink-0" />
                                   <span className="text-[12px] truncate">{step.name}</span>
                                   {stepDurationMs !== null && (
-                                    <span className="ml-auto text-[11px] text-muted-foreground shrink-0">{fmtDuration(stepDurationMs)}</span>
+                                    <span className="ml-auto text-[11px] text-muted-foreground shrink-0">{formatDuration(stepDurationMs)}</span>
                                   )}
                                 </div>
                               )

@@ -9,7 +9,7 @@ import { readFileSync, existsSync } from 'fs'
 import { join } from 'path'
 import yaml from 'js-yaml'
 import { repos } from '../db/schema'
-import { WORKFLOWS_DIR } from '@shared/constants'
+import { WORKFLOW_DIRS } from '@shared/constants'
 import type { RunFilter, WorkflowDefinition, JobGraphNode } from '@shared/types'
 
 let runner: WorkflowRunner | null = null
@@ -147,8 +147,14 @@ export function registerRunHandlers(): void {
       const [repo] = await db.select().from(repos).where(eq(repos.id, run.repoId)).limit(1)
       if (!repo?.localPath) return []
 
-      const wfPath = join(repo.localPath, WORKFLOWS_DIR, run.workflowFile)
-      if (!existsSync(wfPath)) return []
+      // Resolve workflow file from both directories (.github/workflows first)
+      const filename = run.workflowFile.replace(/^\.github\/workflows\//, '').replace(/^\.orbit\/workflows\//, '')
+      let wfPath: string | null = null
+      for (const dir of WORKFLOW_DIRS) {
+        const candidate = join(repo.localPath, dir, filename)
+        if (existsSync(candidate)) { wfPath = candidate; break }
+      }
+      if (!wfPath) return []
 
       const wf = yaml.load(readFileSync(wfPath, 'utf-8')) as WorkflowDefinition
       if (!wf?.jobs) return []
@@ -207,5 +213,36 @@ export function registerRunHandlers(): void {
       if (msg.includes('410') || msg.includes('Gone')) throw new Error('Logs do job expiraram e não estão mais disponíveis.')
       throw new Error(`Erro ao buscar logs do job: ${msg}`)
     }
+  })
+
+  // ── Dashboard analytics ────────────────────────────────────────────────────
+  ipcMain.handle(IPC_CHANNELS.GITHUB_REPO_STATS, async (_, repoId: string) => {
+    const [owner, repo] = repoId.split('/')
+    const { getRepoStats } = await import('../services/githubService')
+    return getRepoStats(owner, repo)
+  })
+
+  ipcMain.handle(IPC_CHANNELS.GITHUB_PR_COUNTS, async (_, repoId: string) => {
+    const [owner, repo] = repoId.split('/')
+    const { getPullRequestCounts } = await import('../services/githubService')
+    return getPullRequestCounts(owner, repo)
+  })
+
+  ipcMain.handle(IPC_CHANNELS.GITHUB_COMMIT_ACTIVITY, async (_, repoId: string) => {
+    const [owner, repo] = repoId.split('/')
+    const { getCommitActivity } = await import('../services/githubService')
+    return getCommitActivity(owner, repo)
+  })
+
+  ipcMain.handle(IPC_CHANNELS.GITHUB_CONTRIBUTORS, async (_, repoId: string, limit?: number) => {
+    const [owner, repo] = repoId.split('/')
+    const { getTopContributors } = await import('../services/githubService')
+    return getTopContributors(owner, repo, limit)
+  })
+
+  ipcMain.handle(IPC_CHANNELS.GITHUB_LANGUAGES, async (_, repoId: string) => {
+    const [owner, repo] = repoId.split('/')
+    const { getLanguages } = await import('../services/githubService')
+    return getLanguages(owner, repo)
   })
 }

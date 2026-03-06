@@ -4,7 +4,7 @@ import { join } from 'path'
 import yaml from 'js-yaml'
 import { db } from '../db'
 import { repos } from '../db/schema'
-import { WORKFLOWS_DIR } from '@shared/constants'
+import { WORKFLOW_DIRS } from '@shared/constants'
 import type { WorkflowRunner } from '../runner/workflowRunner'
 import type { WorkflowDefinition } from '@shared/types'
 
@@ -29,7 +29,7 @@ export async function startScheduleService(): Promise<void> {
       registerRepoSchedules(repo.id, repo.localPath)
     }
   }
-  console.log(`[ScheduleService] Started — ${activeTasks.size} repo(s) with schedules`)
+  console.log(`[ScheduleService] Started -- ${activeTasks.size} repo(s) with schedules`)
 }
 
 /** Stop all cron jobs (called on app quit). */
@@ -48,18 +48,27 @@ export function registerRepoSchedules(repoId: string, localPath: string): void {
   // Remove any previously registered tasks for this repo
   unregisterRepoSchedules(repoId)
 
-  const workflowsDir = join(localPath, WORKFLOWS_DIR)
-  if (!existsSync(workflowsDir)) return
+  // Scan both directories (.github/workflows first, then .orbit/workflows), dedup by filename
+  const seen = new Set<string>()
+  const allFiles: Array<{ file: string; fullPath: string }> = []
+  for (const dir of WORKFLOW_DIRS) {
+    const workflowsDir = join(localPath, dir)
+    if (!existsSync(workflowsDir)) continue
+    const files = readdirSync(workflowsDir).filter((f) => f.endsWith('.yml') || f.endsWith('.yaml'))
+    for (const file of files) {
+      if (seen.has(file)) continue
+      seen.add(file)
+      allFiles.push({ file, fullPath: join(workflowsDir, file) })
+    }
+  }
 
-  const files = readdirSync(workflowsDir).filter(
-    (f) => f.endsWith('.yml') || f.endsWith('.yaml')
-  )
+  if (allFiles.length === 0) return
 
   const tasks: cron.ScheduledTask[] = []
 
-  for (const file of files) {
+  for (const { file, fullPath } of allFiles) {
     try {
-      const content = readFileSync(join(workflowsDir, file), 'utf-8')
+      const content = readFileSync(fullPath, 'utf-8')
       const wf = yaml.load(content) as WorkflowDefinition
       if (!wf?.on) continue
 
@@ -84,7 +93,7 @@ export function registerRepoSchedules(repoId: string, localPath: string): void {
           expr,
           async () => {
             if (!runner) return
-            console.log(`[ScheduleService] Firing scheduled run: ${repoId} → ${file} (${expr})`)
+            console.log(`[ScheduleService] Firing scheduled run: ${repoId} -> ${file} (${expr})`)
             try {
               await runner.queueRun(repoId, file, 'schedule', {})
             } catch (err) {
@@ -95,7 +104,7 @@ export function registerRepoSchedules(repoId: string, localPath: string): void {
         )
 
         tasks.push(task)
-        console.log(`[ScheduleService] Registered: ${repoId}/${file} → cron "${expr}"`)
+        console.log(`[ScheduleService] Registered: ${repoId}/${file} -> cron "${expr}"`)
       }
     } catch (err) {
       console.error(`[ScheduleService] Error parsing ${file}:`, err)

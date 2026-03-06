@@ -121,4 +121,44 @@
   .log-step { color: #d4d4d4; font-weight: 500; }
   .log-job { color: #e5e5e5; font-weight: 600; }
   .log-skip { color: #52525b; }
+
+  /* React Flow pipeline overrides — GitHub Actions style */
+  .pipeline-flow .react-flow__background,
+  .pipeline-flow .react-flow__minimap,
+  .pipeline-flow .react-flow__controls,
+  .pipeline-flow .react-flow__attribution { display: none !important; }
+
+  .pipeline-flow .react-flow__node {
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+    border-radius: 0 !important;
+    cursor: default !important;
+  }
+  .pipeline-flow .react-flow__node:focus,
+  .pipeline-flow .react-flow__node.selected {
+    outline: none !important;
+    box-shadow: none !important;
+  }
+
+  .pipeline-flow .react-flow__edge-path {
+    stroke: #30363d !important;
+    stroke-width: 2 !important;
+  }
+
+  .pipeline-flow .react-flow__handle {
+    pointer-events: none;
+  }
+
+  .pipeline-flow .react-flow__pane {
+    cursor: grab !important;
+  }
+  .pipeline-flow .react-flow__pane:active {
+    cursor: grabbing !important;
+  }
+
+  .pipeline-flow .react-flow__renderer {
+    background: transparent !important;
+  }
 }

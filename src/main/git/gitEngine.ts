@@ -1,4 +1,5 @@
 import type { GitBranch, GitCommit, GitFile, GitStatus, GitTag } from '@shared/types'
+import { createHash } from 'crypto'
 import { mkdirSync } from 'fs'
 import { simpleGit, SimpleGit } from 'simple-git'
 
@@ -241,12 +242,22 @@ export async function fetch(localPath: string, remote = 'origin'): Promise<void>
 export async function getLog(localPath: string, limit = 20): Promise<GitCommit[]> {
   const g = git(localPath)
   const log = await g.log({ maxCount: limit })
-  return log.all.map((c) => ({
-    hash: c.hash,
-    message: c.message,
-    author: c.author_name,
-    date: c.date
-  }))
+  return log.all.map((c) => {
+    const email = c.author_email.trim().toLowerCase()
+    // GitHub noreply emails: extract username for direct avatar
+    const noreply = email.match(/^(?:\d+\+)?(.+)@users\.noreply\.github\.com$/)
+    const avatarUrl = noreply
+      ? `https://github.com/${noreply[1]}.png?size=40`
+      : `https://www.gravatar.com/avatar/${createHash('md5').update(email).digest('hex')}?s=40&d=identicon`
+    return {
+      hash: c.hash,
+      message: c.message,
+      author: c.author_name,
+      authorEmail: c.author_email,
+      avatarUrl,
+      date: c.date
+    }
+  })
 }
 
 export async function getBranches(localPath: string): Promise<GitBranch[]> {

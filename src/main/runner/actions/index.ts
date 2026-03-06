@@ -4,6 +4,8 @@ import { fileActions } from './file'
 import { versionActions } from './version'
 import { utilActions } from './utils'
 import { dockerActions } from './docker'
+import { cacheActions } from './cache'
+import { artifactActions } from './artifact'
 
 export interface ActionContext {
   workspace: string
@@ -22,7 +24,9 @@ export const allActions: Record<string, ActionHandler> = {
   ...fileActions,
   ...versionActions,
   ...utilActions,
-  ...dockerActions
+  ...dockerActions,
+  ...cacheActions,
+  ...artifactActions
 }
 
 export function getAction(name: string): ActionHandler | null {

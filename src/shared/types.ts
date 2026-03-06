@@ -58,6 +58,22 @@ export interface WorkflowDefinition {
   jobs: Record<string, JobDefinition>
 }
 
+export interface MatrixStrategy {
+  matrix: Record<string, unknown[]> & {
+    include?: Record<string, unknown>[]
+    exclude?: Record<string, unknown>[]
+  }
+  'fail-fast'?: boolean
+  'max-parallel'?: number
+}
+
+export interface ServiceDefinition {
+  image: string
+  env?: Record<string, string>
+  ports?: string[]
+  options?: string
+}
+
 export interface JobDefinition {
   name?: string
   needs?: string | string[]
@@ -65,6 +81,11 @@ export interface JobDefinition {
   container?: string
   if?: string
   env?: Record<string, string>
+  strategy?: MatrixStrategy
+  services?: Record<string, ServiceDefinition>
+  outputs?: Record<string, string>
+  'timeout-minutes'?: number
+  'continue-on-error'?: boolean
   steps: StepDefinition[]
 }
 
@@ -73,11 +94,14 @@ export interface StepDefinition {
   id?: string
   if?: string
   run?: string
+  uses?: string
   OrbitCI?: string
+  shell?: string
   with?: Record<string, string>
   env?: Record<string, string>
   'working-directory'?: string
   'continue-on-error'?: boolean
+  'timeout-minutes'?: number
   'retry'?: number
 }
 
@@ -226,6 +250,8 @@ export interface GitCommit {
   hash: string
   message: string
   author: string
+  authorEmail: string
+  avatarUrl: string
   date: string
 }
 

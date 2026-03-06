@@ -23,7 +23,7 @@ export const fileActions: Record<string, ActionHandler> = {
     } else {
       writeFileSync(filePath, content, 'utf-8')
     }
-    log(`✓ Arquivo escrito: ${w.path}`)
+    log(`[OK] Arquivo escrito: ${w.path}`)
   },
 
   'file/delete': async ({ with: w, workspace, log }) => {
@@ -31,9 +31,9 @@ export const fileActions: Record<string, ActionHandler> = {
     const filePath = join(workspace, w.path)
     if (existsSync(filePath)) {
       unlinkSync(filePath)
-      log(`✓ Arquivo removido: ${w.path}`)
+      log(`[OK] Arquivo removido: ${w.path}`)
     } else {
-      log(`⚠ Arquivo não encontrado: ${w.path}`)
+      log(`[WARN] Arquivo nao encontrado: ${w.path}`)
     }
   },
 
@@ -45,14 +45,14 @@ export const fileActions: Record<string, ActionHandler> = {
     const dst = join(workspace, w.destination)
     mkdirSync(dirname(dst), { recursive: true })
     copyFileSync(src, dst)
-    log(`✓ Arquivo copiado: ${w.source} → ${w.destination}`)
+    log(`[OK] Arquivo copiado: ${w.source} -> ${w.destination}`)
   },
 
   'file/mkdir': async ({ with: w, workspace, log }) => {
     if (!w?.path) throw new Error('file/mkdir: "path" é obrigatório')
     const dir = join(workspace, w.path)
     mkdirSync(dir, { recursive: true })
-    log(`✓ Diretório criado: ${w.path}`)
+    log(`[OK] Diretorio criado: ${w.path}`)
   },
 
   'file/template': async ({ with: w, workspace, log }) => {
@@ -67,6 +67,6 @@ export const fileActions: Record<string, ActionHandler> = {
     const result = compiled(vars)
     mkdirSync(dirname(outputPath), { recursive: true })
     writeFileSync(outputPath, result, 'utf-8')
-    log(`✓ Template renderizado: ${w.output}`)
+    log(`[OK] Template renderizado: ${w.output}`)
   }
 }

@@ -19,6 +19,38 @@ import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import type { GitCommit } from '@shared/types'
 import { useTranslation } from 'react-i18next'
 
+// ── Author Avatar ────────────────────────────────────────────────────────────
+
+function AuthorAvatar({ name, avatarUrl, size = 20 }: { name: string; avatarUrl?: string; size?: number }): JSX.Element {
+  const [imgError, setImgError] = useState(false)
+
+  if (!avatarUrl || imgError) {
+    const initials = name
+      .split(/[\s.]+/)
+      .slice(0, 2)
+      .map((p) => p[0]?.toUpperCase() ?? '')
+      .join('')
+    return (
+      <div
+        className="rounded-full bg-muted flex items-center justify-center shrink-0 text-muted-foreground font-bold"
+        style={{ width: size, height: size, fontSize: size * 0.4 }}
+      >
+        {initials}
+      </div>
+    )
+  }
+
+  return (
+    <img
+      src={avatarUrl}
+      alt={name}
+      className="rounded-full shrink-0"
+      style={{ width: size, height: size }}
+      onError={() => setImgError(true)}
+    />
+  )
+}
+
 // ── Diff parser ──────────────────────────────────────────────────────────────
 
 interface DiffLine {
@@ -358,17 +390,18 @@ export function HistoryView({ repoId }: Props): JSX.Element {
                         selected?.hash === c.hash && 'bg-accent',
                       )}
                     >
-                      <p className="text-[13px] text-foreground truncate leading-snug">{c.message}</p>
-                      <div className="flex items-center justify-between mt-0.5">
-                        <div className="flex items-center gap-1.5 min-w-0">
-                          <code className="text-[11px] font-mono text-muted-foreground">
-                            {c.hash.slice(0, 7)}
-                          </code>
-                          <span className="text-[11px] text-muted-foreground/70 truncate">
+                      <p className="text-[13px] text-foreground leading-snug line-clamp-2 break-words">{c.message}</p>
+                      <div className="flex items-center gap-2 mt-1">
+                        <AuthorAvatar name={c.author} avatarUrl={c.avatarUrl} size={18} />
+                        <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                          <span className="text-[11px] text-muted-foreground/70 truncate font-medium">
                             {c.author}
                           </span>
+                          <code className="text-[11px] font-mono text-muted-foreground/50">
+                            {c.hash.slice(0, 7)}
+                          </code>
                         </div>
-                        <span className="text-[11px] text-muted-foreground/50 shrink-0 ml-2">
+                        <span className="text-[11px] text-muted-foreground/50 shrink-0">
                           {formatRelativeTime(c.date)}
                         </span>
                       </div>
@@ -433,7 +466,8 @@ export function HistoryView({ repoId }: Props): JSX.Element {
                 <p className="text-[14px] text-foreground font-medium leading-snug">
                   {selected.message}
                 </p>
-                <div className="flex items-center gap-3 text-[12px] text-muted-foreground">
+                <div className="flex items-center gap-2.5 text-[12px] text-muted-foreground">
+                  <AuthorAvatar name={selected.author} avatarUrl={selected.avatarUrl} size={22} />
                   <span className="font-medium text-foreground/80">{selected.author}</span>
                   <span>{formatRelativeTime(selected.date)}</span>
                   <code className="text-[11px] font-mono text-muted-foreground/60 select-all">

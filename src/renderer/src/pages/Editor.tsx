@@ -100,7 +100,7 @@ export function Editor(): JSX.Element {
     try {
       await handleSave()
       const name = fileName.endsWith('.yml') || fileName.endsWith('.yaml') ? fileName : `${fileName}.yml`
-      const runId = await electron.workflows.run(decodedId, name)
+      const { runId } = await electron.workflows.run(decodedId, name)
       navigate(`/run/${runId}`)
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : t('common.error', 'Error')
